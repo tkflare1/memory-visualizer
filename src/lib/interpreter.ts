@@ -968,6 +968,16 @@ class Executor {
     this.stack.push(frame);
     const callerLine = (callExpr as any).line || 0;
     this.callStack.push({ fn: name, callerLine });
+
+    // Snapshot function entry so recursive frames appear incrementally
+    const entryLine = fdef.body.length > 0 ? (fdef.body[0].line || 0) : 0;
+    const argSummary = fdef.params.map((p, i) => {
+      const v = frame.vars[p.name];
+      const display = v === null ? 'nullptr' : (typeof v === 'string' ? `→${v}` : String(v));
+      return `${p.name}=${display}`;
+    }).join(', ');
+    this.snapshot(entryLine, `Enter ${name}(${argSummary})`);
+
     let result: Value = null;
     try {
       this.execBlock(fdef.body, name);
@@ -1033,7 +1043,9 @@ class Executor {
         break;
       }
       case 'if': {
-        if (this.evalExpr(stmt.cond)) {
+        const condVal = this.evalExpr(stmt.cond);
+        this.snapshot(line, `${codeLine}  →  ${condVal ? 'true' : 'false'}`);
+        if (condVal) {
           this.execBlock(stmt.then, fnName);
         } else if (stmt.else) {
           this.execBlock(stmt.else, fnName);
