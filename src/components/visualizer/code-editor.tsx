@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Play,
   ChevronDown,
@@ -68,7 +68,13 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   const lineNumbersRef = useRef<HTMLDivElement>(null);
 
   const lineCount = code.split("\n").length;
-  const isMac = useMemo(() => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent), []);
+  const [modKey, setModKey] = useState("Ctrl");
+
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.userAgent)) {
+      setModKey("⌘");
+    }
+  }, []);
 
   function selectExample(idx: number) {
     setSelectedExample(idx);
@@ -208,7 +214,7 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
             C++
           </div>
           <div>
-            <h1 className="text-lg font-bold">CS198 Memory Visualizer</h1>
+            <h1 className="text-lg font-bold">C++ Memory Visualizer</h1>
             <p className="text-sm text-muted-foreground">
               Paste C++ code below and run to visualize stack &amp; heap memory
             </p>
@@ -411,7 +417,7 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
               </p>
               <p className="text-[11px] text-muted/30">
                 <kbd className="rounded border border-card-border bg-background px-1.5 py-0.5 font-mono text-[10px]">
-                  {isMac ? "⌘" : "Ctrl"}
+                  {modKey}
                 </kbd>
                 {" + "}
                 <kbd className="rounded border border-card-border bg-background px-1.5 py-0.5 font-mono text-[10px]">

@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CS198 C++ Memory Visualizer",
+  title: "C++ Memory Visualizer",
   description:
-    "Interactive visualizer for C++ pointer tracing, stack/heap memory diagrams, and the classic Cats Problem.",
+    "Interactive visualizer for C++ pointer tracing, stack & heap memory diagrams, linked lists, and recursion.",
 };
 
 export default function RootLayout({

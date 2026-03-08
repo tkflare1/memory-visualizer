@@ -256,7 +256,7 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden text-[11px] text-muted/40 lg:inline">
-            CS198 Memory Visualizer
+            C++ Memory Visualizer
           </span>
           <ThemeToggle />
         </div>
