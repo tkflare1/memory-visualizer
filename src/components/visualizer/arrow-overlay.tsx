@@ -118,7 +118,9 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
     const HEAD = 12;
 
     for (const { sourceId, targetId, color, label, fromStack } of pointers) {
-      const srcEl = container.querySelector(`[data-cell-id="${sourceId}"]`) as HTMLElement | null;
+      // Prefer the pointer icon element for source positioning
+      const srcEl = (container.querySelector(`[data-arrow-src="${sourceId}"]`) ||
+        container.querySelector(`[data-cell-id="${sourceId}"]`)) as HTMLElement | null;
       const tgtEl = container.querySelector(`[data-cell-id="${targetId}"]`) as HTMLElement | null;
       if (!srcEl || !tgtEl) continue;
 

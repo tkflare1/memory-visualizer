@@ -71,7 +71,7 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
       <span className="text-muted/30">=</span>
       <span className="shrink-0 font-bold">
         {isPointer ? (
-          <span className="inline-flex items-center gap-1 text-accent">
+          <span data-arrow-src={item.id} className="inline-flex items-center gap-1 text-accent">
             <svg width="28" height="12" viewBox="0 0 28 12" className="shrink-0">
               <circle cx="4" cy="6" r="3.5" fill="currentColor" opacity={0.85} />
               <line x1="7.5" y1="6" x2="20" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
