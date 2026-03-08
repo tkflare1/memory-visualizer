@@ -7,6 +7,7 @@ interface Pointer {
   targetId: string;
   color: string;
   label: string;
+  fromStack: boolean;
 }
 
 interface Arrow {
@@ -18,6 +19,7 @@ interface Arrow {
   headPath: string;
   color: string;
   label: string;
+  showLabel: boolean;
 }
 
 const COLORS = [
@@ -46,20 +48,20 @@ export function collectPointers(
     return item.id;
   }
 
-  function traverse(items: { id: string; label?: string; pointsTo?: string; children?: unknown[] }[]) {
+  function traverse(items: { id: string; label?: string; pointsTo?: string; children?: unknown[] }[], fromStack: boolean) {
     for (const item of items) {
       if (item.pointsTo) {
         const label = extractLabel(item);
-        pointers.push({ sourceId: item.id, targetId: item.pointsTo, color: hashColor(label), label });
+        pointers.push({ sourceId: item.id, targetId: item.pointsTo, color: hashColor(label), label, fromStack });
       }
       if ("children" in item && Array.isArray(item.children)) {
-        traverse(item.children as typeof items);
+        traverse(item.children as typeof items, fromStack);
       }
     }
   }
 
-  for (const frame of stack) traverse(frame.variables as any);
-  traverse(heap as any);
+  for (const frame of stack) traverse(frame.variables as any, true);
+  traverse(heap as any, false);
   return pointers;
 }
 
@@ -112,7 +114,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
     const targetYOffsets: Record<string, number> = {};
     const HEAD = 12;
 
-    for (const { sourceId, targetId, color, label } of pointers) {
+    for (const { sourceId, targetId, color, label, fromStack } of pointers) {
       const srcEl = container.querySelector(`[data-cell-id="${sourceId}"]`) as HTMLElement | null;
       const tgtEl = container.querySelector(`[data-cell-id="${targetId}"]`) as HTMLElement | null;
       if (!srcEl || !tgtEl) continue;
@@ -182,7 +184,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       }
 
       const headPath = buildArrowhead(tx, ty, headAngle, HEAD);
-      result.push({ sx, sy, tx, ty, linePath, headPath, color, label });
+      result.push({ sx, sy, tx, ty, linePath, headPath, color, label, showLabel: !fromStack });
     }
 
     setArrows(result);
@@ -252,8 +254,8 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
               strokeLinejoin="round"
             />
 
-            {/* Label near source */}
-            {a.label && (
+            {/* Label — only for heap pointers where source isn't obvious */}
+            {a.showLabel && a.label && (
               <g>
                 <rect
                   x={a.sx + 8}
