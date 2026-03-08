@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+/* Dark mode (default) */
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #111113;
+  --card-border: #27272a;
+  --code-bg: #18181b;
+  --muted: #71717a;
+  --muted-foreground: #a1a1aa;
+  --accent: #3b82f6;
+  --accent-dim: rgba(59, 130, 246, 0.12);
+  --success: #22c55e;
+  --success-dim: rgba(34, 197, 94, 0.2);
+  --danger: #ef4444;
+  --danger-dim: rgba(239, 68, 68, 0.12);
+  --warning: #f59e0b;
+  --warning-dim: rgba(245, 158, 11, 0.12);
+}
+
+/* Light mode */
+.light {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #f8f9fa;
+  --card-border: #e2e4e8;
+  --code-bg: #f1f3f5;
+  --muted: #868e96;
+  --muted-foreground: #495057;
+  --accent: #2563eb;
+  --accent-dim: rgba(37, 99, 235, 0.08);
+  --success: #16a34a;
+  --success-dim: rgba(22, 163, 74, 0.1);
+  --danger: #dc2626;
+  --danger-dim: rgba(220, 38, 38, 0.08);
+  --warning: #d97706;
+  --warning-dim: rgba(217, 119, 6, 0.08);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --color-code-bg: var(--code-bg);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-success: var(--success);
+  --color-success-dim: var(--success-dim);
+  --color-danger: var(--danger);
+  --color-danger-dim: var(--danger-dim);
+  --color-warning: var(--warning);
+  --color-warning-dim: var(--warning-dim);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+code, pre, .font-mono, textarea {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+@keyframes flash-green {
+  0% { background-color: color-mix(in srgb, var(--success) 35%, transparent); }
+  100% { background-color: color-mix(in srgb, var(--success) 10%, transparent); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-accent {
+  0%, 100% { background-color: var(--accent-dim); }
+  50% { background-color: color-mix(in srgb, var(--accent) 20%, transparent); }
+}
+
+@keyframes glow-changed {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 40%, transparent); }
+  50% { box-shadow: 0 0 12px 2px color-mix(in srgb, var(--success) 25%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.cell-changed {
+  animation: flash-green 0.6s ease-out forwards;
+}
+
+[data-changed] {
+  animation: glow-changed 1s ease-out;
+}
+
+[data-active-line] {
+  animation: pulse-accent 2s ease-in-out infinite;
+}
+
+.arrow-path {
+  animation: fade-in 0.3s ease-out;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--card-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
