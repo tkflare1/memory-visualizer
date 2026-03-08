@@ -216,7 +216,14 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "ArrowRight" || e.key === " ") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "z" && e.shiftKey) {
+        e.preventDefault();
+        goNext();
+      } else if (mod && e.key === "z") {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === "ArrowRight" || e.key === " ") {
         e.preventDefault();
         goNext();
       } else if (e.key === "ArrowLeft") {

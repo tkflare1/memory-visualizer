@@ -1220,6 +1220,44 @@ function serializeTrace(executor: Executor, codeLines: string[], program: Progra
       }
     }
 
+    // Orphaned memory detection: walk all pointers from stack to find reachable heap ids
+    const reachable = new Set<string>();
+    function markReachable(items: MemoryItem[]) {
+      for (const item of items) {
+        if (item.pointsTo && !reachable.has(item.pointsTo)) {
+          reachable.add(item.pointsTo);
+          // Also mark the parent block reachable (e.g. h1_0 makes h1_0_* reachable)
+          const allFlat = flattenItems(heapItems);
+          for (const h of allFlat) {
+            if (h.id === item.pointsTo || h.id.startsWith(item.pointsTo + '_')) {
+              reachable.add(h.id);
+              if (h.children) markReachable(h.children);
+            }
+          }
+        }
+        if (item.children) markReachable(item.children);
+      }
+    }
+    // Seed from all stack frames (not just active — waiting frames still hold refs)
+    for (const frame of stackFrames) markReachable(frame.variables);
+    // Also seed from reachable heap items (transitive closure)
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const item of flattenItems(heapItems)) {
+        if (reachable.has(item.id) && item.pointsTo && !reachable.has(item.pointsTo)) {
+          reachable.add(item.pointsTo);
+          changed = true;
+        }
+      }
+    }
+    // Mark top-level heap items as orphaned if none of their ids are reachable
+    for (const item of heapItems) {
+      const allIds = flattenItems([item]).map(i => i.id);
+      const isReachable = allIds.some(id => reachable.has(id));
+      if (!isReachable) item.orphaned = true;
+    }
+
     // Resolve callerLine in the correct calling function
     const callerFn = findCallerFunction(snap);
 
