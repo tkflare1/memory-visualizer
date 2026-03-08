@@ -1026,7 +1026,10 @@ class Executor {
       }
       case 'while': {
         let iterations = 0;
-        while (this.evalExpr(stmt.cond)) {
+        for (;;) {
+          const condVal = this.evalExpr(stmt.cond);
+          this.snapshot(line, `${codeLine}  →  ${condVal ? 'true' : 'false'}`);
+          if (!condVal) break;
           if (iterations++ > MAX_LOOP) throw new Error('Infinite loop detected');
           this.execBlock(stmt.body, fnName);
         }
@@ -1035,10 +1038,23 @@ class Executor {
       case 'for': {
         if (stmt.init) this.execStmt(stmt.init, fnName);
         let iterations = 0;
-        while (!stmt.cond || this.evalExpr(stmt.cond)) {
+        for (;;) {
+          if (stmt.cond) {
+            const condVal = this.evalExpr(stmt.cond);
+            this.snapshot(line, `${codeLine}  →  ${condVal ? 'true' : 'false'}`);
+            if (!condVal) break;
+          }
           if (iterations++ > MAX_LOOP) throw new Error('Infinite loop detected');
           this.execBlock(stmt.body, fnName);
-          if (stmt.update) this.execStmt(stmt.update, fnName);
+          if (stmt.update) {
+            // Execute update silently (the next condition snapshot will show the new state)
+            if (stmt.update.kind === 'expr_stmt') this.evalExpr(stmt.update.expr);
+            else if (stmt.update.kind === 'assign') {
+              const ref = this.resolveRefForAssign(stmt.update.target);
+              const val = this.evalExpr(stmt.update.value);
+              if (ref) (ref.container as any)[ref.key] = val;
+            }
+          }
         }
         break;
       }
