@@ -1181,18 +1181,27 @@ function serializeTrace(executor: Executor, codeLines: string[], program: Progra
     functions.unshift({ name: 'main', lines: mainLines });
   }
 
+  function fmtAddr(rawAddr: string): string {
+    const base = parseInt(rawAddr.split('.')[0]);
+    return `0x${(base * 0x100).toString(16)}`;
+  }
+
   // Helper to serialize heap from raw snap data
   function serializeHeapFromSnap(heap: Record<string, any>): MemoryItem[] {
     const items: MemoryItem[] = [];
     for (const [addr, val] of Object.entries(heap)) {
       if (val && typeof val === 'object' && '__elements' in val) {
         for (let idx = 0; idx < val.__count; idx++) {
-          items.push(serializeHeapValue(`${addr}.${idx}`, `${val.__type.replace('[]', '')} [${idx}]`, val.__elements[idx], executor.structDefs));
+          const item = serializeHeapValue(`${addr}.${idx}`, `${val.__type.replace('[]', '')} [${idx}]`, val.__elements[idx], executor.structDefs);
+          item.address = `${fmtAddr(addr)}+${idx * 0x40}`;
+          items.push(item);
         }
       } else {
         const label = val && typeof val === 'object' && '__type' in val
           ? val.__type : typeof val === 'number' ? 'int' : 'value';
-        items.push(serializeHeapValue(addr, label, val, executor.structDefs));
+        const item = serializeHeapValue(addr, label, val, executor.structDefs);
+        item.address = fmtAddr(addr);
+        items.push(item);
       }
     }
     return items;

@@ -1,6 +1,7 @@
 export interface MemoryItem {
   id: string;
   label: string;
+  address?: string;
   value?: string;
   pointsTo?: string;
   children?: MemoryItem[];

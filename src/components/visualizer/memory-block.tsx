@@ -40,6 +40,11 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
           )}
         >
           <span>{item.label}</span>
+          {item.address && (
+            <span className="ml-auto font-mono text-[10px] font-normal text-muted/30">
+              {item.address}
+            </span>
+          )}
           {isOrphaned && (
             <span className="rounded-full bg-danger/20 px-2.5 py-0.5 text-[10px] font-semibold text-danger">
               LEAKED
@@ -67,6 +72,11 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
     >
       <span className="min-w-0 shrink-0 font-medium text-muted-foreground">
         {item.label}
+        {item.address && (
+          <span className="ml-1.5 font-mono text-[10px] text-muted/25">
+            {item.address}
+          </span>
+        )}
       </span>
       <span className="text-muted/30">=</span>
       <span className="shrink-0 font-bold">
