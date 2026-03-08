@@ -60,7 +60,10 @@ export function collectPointers(
     }
   }
 
-  for (const frame of stack) traverse(frame.variables as any, true);
+  // Only draw arrows from the active (topmost) stack frame to avoid clutter during recursion
+  if (stack.length > 0) {
+    traverse(stack[stack.length - 1].variables as any, true);
+  }
   traverse(heap as any, false);
   return pointers;
 }
@@ -125,7 +128,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       const sx = sr.right - cRect.left + sL + 3;
       const sy = sr.top + sr.height / 2 - cRect.top + sT;
 
-      const yOff = (targetYOffsets[targetId] || 0) * 10;
+      const yOff = (targetYOffsets[targetId] || 0) * 6;
       targetYOffsets[targetId] = (targetYOffsets[targetId] || 0) + 1;
 
       const tx = tr.left - cRect.left + sL - 2;
@@ -162,20 +165,15 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
         const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
         linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
       } else if (dx < -30) {
-        // Backwards arrow — must curve to avoid crossing over content
-        const bump = Math.max(70, absDy * 0.35 + 35);
-        if (absDy < 60) {
-          const topY = Math.min(sy, ty) - bump;
-          const cp1x = sx + 50, cp1y = topY;
-          const cp2x = tx - 50, cp2y = topY;
-          headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
-          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
-          linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
-        } else {
-          headAngle = Math.atan2(dy, dx);
-          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
-          linePath = `M ${sx} ${sy} L ${lx} ${ly}`;
-        }
+        // Backwards arrow — route below the nodes with a compact curve
+        const span = absDx;
+        const bump = Math.max(35, span * 0.12 + 20);
+        const botY = Math.max(sy, ty) + bump;
+        const cp1x = sx + Math.min(40, span * 0.15), cp1y = botY;
+        const cp2x = tx - Math.min(40, span * 0.15), cp2y = botY;
+        headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
+        const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
+        linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
       } else {
         // Nearly vertical — straight line
         headAngle = Math.atan2(dy, dx);
