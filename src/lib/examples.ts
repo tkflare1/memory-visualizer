@@ -124,6 +124,33 @@ realReassign(head);
 `,
   },
   {
+    title: "Reverse Linked List",
+    description: "Recursive linked list reversal with struct constructors.",
+    code: `struct ListNode {
+    int val;
+    ListNode* next;
+    ListNode() : val(0), next(nullptr) {}
+    ListNode(int x) : val(x), next(nullptr) {}
+    ListNode(int x, ListNode* next) : val(x), next(next) {}
+};
+
+ListNode* reverseList(ListNode* head) {
+    if (!head || !(head->next)) {
+        return head;
+    }
+    ListNode* p = reverseList(head->next);
+    head->next->next = head;
+    head->next = nullptr;
+    return p;
+}
+
+ListNode* a = new ListNode(1);
+a->next = new ListNode(2);
+a->next->next = new ListNode(3, nullptr);
+ListNode* result = reverseList(a);
+`,
+  },
+  {
     title: "Array of Structs",
     description: "Allocate an array of structs and modify individual elements.",
     code: `struct Point {

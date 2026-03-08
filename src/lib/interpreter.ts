@@ -108,7 +108,8 @@ type Expr = Record<string, any>;
 type Stmt = Record<string, any>;
 
 interface StructField { type: string; name: string; arraySize: number | null; }
-interface StructDef { name: string; fields: StructField[]; }
+interface ConstructorDef { params: ParamDef[]; initList: { field: string; value: Expr }[]; }
+interface StructDef { name: string; fields: StructField[]; constructors: ConstructorDef[]; }
 interface ParamDef { type: string; isRef: boolean; name: string; }
 interface FuncDef { name: string; returnType: string; params: ParamDef[]; body: Stmt[]; bodyLines: string[]; }
 interface Program { structs: Record<string, StructDef>; functions: Record<string, FuncDef>; main: Stmt[]; }
@@ -218,7 +219,24 @@ class Parser {
     const name = this.expect(TT.Ident).value;
     this.expect(TT.LBrace);
     const fields: StructField[] = [];
-    while (!this.at(TT.RBrace)) {
+    const constructors: ConstructorDef[] = [];
+    while (!this.at(TT.RBrace) && !this.at(TT.Eof)) {
+      // Destructor: ~StructName() { ... } — skip entirely
+      if (this.at(TT.Not) || (this.at(TT.Minus) && this.tokens[this.pos + 1]?.value === name)) {
+        this.skipUntilAfterBrace();
+        continue;
+      }
+      // Constructor: StructName( ... ) [: init_list] { ... }
+      if (this.at(TT.Ident) && this.peek().value === name) {
+        const saved = this.pos;
+        this.advance();
+        if (this.at(TT.LParen)) {
+          constructors.push(this.parseConstructorBody());
+          continue;
+        }
+        this.pos = saved;
+      }
+      // Regular field declaration
       const ft = this.parseType();
       const fn = this.expect(TT.Ident).value;
       let arrSize: number | null = null;
@@ -231,7 +249,54 @@ class Parser {
     }
     this.expect(TT.RBrace);
     this.expect(TT.Semi);
-    return { name, fields };
+    return { name, fields, constructors };
+  }
+
+  private parseConstructorBody(): ConstructorDef {
+    this.expect(TT.LParen);
+    const params: ParamDef[] = [];
+    if (!this.at(TT.RParen)) {
+      params.push(this.parseParam());
+      while (this.match(TT.Comma)) params.push(this.parseParam());
+    }
+    this.expect(TT.RParen);
+
+    const initList: { field: string; value: Expr }[] = [];
+    if (this.match(TT.Colon)) {
+      do {
+        const field = this.expect(TT.Ident).value;
+        this.expect(TT.LParen);
+        const value = this.parseExpr();
+        this.expect(TT.RParen);
+        initList.push({ field, value });
+      } while (this.match(TT.Comma));
+    }
+
+    // Skip constructor body { ... }
+    this.expect(TT.LBrace);
+    let depth = 1;
+    while (depth > 0 && !this.at(TT.Eof)) {
+      if (this.at(TT.LBrace)) depth++;
+      if (this.at(TT.RBrace)) depth--;
+      if (depth > 0) this.advance();
+    }
+    this.expect(TT.RBrace);
+
+    return { params, initList };
+  }
+
+  private skipUntilAfterBrace() {
+    while (!this.at(TT.LBrace) && !this.at(TT.Eof)) this.advance();
+    if (this.at(TT.LBrace)) {
+      this.advance();
+      let depth = 1;
+      while (depth > 0 && !this.at(TT.Eof)) {
+        if (this.at(TT.LBrace)) depth++;
+        if (this.at(TT.RBrace)) depth--;
+        if (depth > 0) this.advance();
+      }
+      if (this.at(TT.RBrace)) this.advance();
+    }
   }
 
   parseFuncDef(): FuncDef {
@@ -759,8 +824,23 @@ class Executor {
         let val: Value;
         if (tn in this.structDefs) {
           val = this.makeStruct(tn);
-          if (expr.args.length > 0) {
-            const fields = this.structDefs[tn].fields;
+          const sd = this.structDefs[tn];
+          const ctor = sd.constructors?.find(c => c.params.length === expr.args.length);
+          if (ctor && ctor.initList.length > 0) {
+            // Push temporary frame with constructor params so init expressions resolve
+            const ctorFrame: { name: string; vars: Record<string, Value>; types: Record<string, string> } =
+              { name: '__ctor', vars: {}, types: {} };
+            for (let i = 0; i < ctor.params.length; i++) {
+              ctorFrame.vars[ctor.params[i].name] = this.evalExpr(expr.args[i]);
+              ctorFrame.types[ctor.params[i].name] = ctor.params[i].type;
+            }
+            this.stack.push(ctorFrame);
+            for (const init of ctor.initList) {
+              (val as any)[init.field] = this.evalExpr(init.value);
+            }
+            this.stack.pop();
+          } else if (expr.args.length > 0) {
+            const fields = sd.fields;
             for (let i = 0; i < Math.min(expr.args.length, fields.length); i++) {
               (val as any)[fields[i].name] = this.evalExpr(expr.args[i]);
             }
