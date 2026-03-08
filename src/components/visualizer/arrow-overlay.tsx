@@ -184,7 +184,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       }
 
       const headPath = buildArrowhead(tx, ty, headAngle, HEAD);
-      result.push({ sx, sy, tx, ty, linePath, headPath, color, label, showLabel: !fromStack });
+      result.push({ sx, sy, tx, ty, linePath, headPath, color, label, showLabel: false });
     }
 
     setArrows(result);
