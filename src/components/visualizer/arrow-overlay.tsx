@@ -135,52 +135,52 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       const dy = ty - sy;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const absDy = Math.abs(dy);
+      const absDx = Math.abs(dx);
 
       let headAngle: number;
       let linePath: string;
 
       if (dist < 40) {
+        // Self-reference loop
         const loopR = 55;
         const cp1x = sx + loopR, cp1y = sy - loopR;
         const cp2x = tx + loopR, cp2y = ty - loopR;
         headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
         const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
         linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
-      } else if (dx > 30) {
-        if (absDy < 20) {
-          headAngle = Math.atan2(dy, dx);
-          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
-          linePath = `M ${sx} ${sy} L ${lx} ${ly}`;
-        } else {
-          const cp1x = sx + dx * 0.4, cp1y = sy;
-          const cp2x = tx - dx * 0.4, cp2y = ty;
-          headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
-          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
-          linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
-        }
-      } else if (dx < -30) {
-        const bump = Math.max(80, absDy * 0.4 + 40);
-        if (absDy < 60) {
-          const topY = Math.min(sy, ty) - bump;
-          const cp1x = sx + 60, cp1y = topY;
-          const cp2x = tx - 60, cp2y = topY;
-          headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
-          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
-          linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
-        } else {
-          const cp1x = sx + bump * 0.7, cp1y = sy;
-          const cp2x = tx - bump * 0.7, cp2y = ty;
-          headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
-          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
-          linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
-        }
-      } else {
-        const sideOff = Math.max(60, absDy * 0.3);
-        const cp1x = sx + sideOff, cp1y = sy;
-        const cp2x = tx + sideOff, cp2y = ty;
+      } else if (dx > 0 && absDy < absDx * 0.7) {
+        // Forward and relatively flat — straight line (covers adjacent nodes)
+        headAngle = Math.atan2(dy, dx);
+        const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
+        linePath = `M ${sx} ${sy} L ${lx} ${ly}`;
+      } else if (dx > 0) {
+        // Forward but steep — gentle curve
+        const curve = Math.min(absDy * 0.25, 40);
+        const cp1x = sx + dx * 0.5, cp1y = sy + (dy > 0 ? -curve : curve);
+        const cp2x = tx - dx * 0.3, cp2y = ty + (dy > 0 ? curve : -curve);
         headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
         const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
         linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
+      } else if (dx < -30) {
+        // Backwards arrow — must curve to avoid crossing over content
+        const bump = Math.max(70, absDy * 0.35 + 35);
+        if (absDy < 60) {
+          const topY = Math.min(sy, ty) - bump;
+          const cp1x = sx + 50, cp1y = topY;
+          const cp2x = tx - 50, cp2y = topY;
+          headAngle = bezierEndAngle(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty);
+          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
+          linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
+        } else {
+          headAngle = Math.atan2(dy, dx);
+          const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
+          linePath = `M ${sx} ${sy} L ${lx} ${ly}`;
+        }
+      } else {
+        // Nearly vertical — straight line
+        headAngle = Math.atan2(dy, dx);
+        const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
+        linePath = `M ${sx} ${sy} L ${lx} ${ly}`;
       }
 
       const headPath = buildArrowhead(tx, ty, headAngle, HEAD);
