@@ -59,6 +59,9 @@ function formatCppCode(code: string): string {
   return result.join("\n");
 }
 
+const STORAGE_KEY_CODE = "memviz_code";
+const STORAGE_KEY_EXAMPLE = "memviz_example";
+
 export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   const [code, setCode] = useState(EXAMPLES[0].code);
   const [selectedExample, setSelectedExample] = useState<number | null>(0);
@@ -70,11 +73,28 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   const lineCount = code.split("\n").length;
   const [modKey, setModKey] = useState("Ctrl");
 
+  // Restore from localStorage on mount
   useEffect(() => {
     if (/Mac|iPhone|iPad/.test(navigator.userAgent)) {
       setModKey("⌘");
     }
+    try {
+      const savedCode = localStorage.getItem(STORAGE_KEY_CODE);
+      const savedExample = localStorage.getItem(STORAGE_KEY_EXAMPLE);
+      if (savedCode !== null) {
+        setCode(savedCode);
+        setSelectedExample(savedExample === "null" ? null : Number(savedExample));
+      }
+    } catch {}
   }, []);
+
+  // Persist to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_CODE, code);
+      localStorage.setItem(STORAGE_KEY_EXAMPLE, String(selectedExample));
+    } catch {}
+  }, [code, selectedExample]);
 
   function selectExample(idx: number) {
     setSelectedExample(idx);
