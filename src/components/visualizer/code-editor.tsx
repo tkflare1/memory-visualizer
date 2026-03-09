@@ -59,12 +59,30 @@ function formatCppCode(code: string): string {
   return result.join("\n");
 }
 
-const STORAGE_KEY_CODE = "memviz_code";
-const STORAGE_KEY_EXAMPLE = "memviz_example";
+const STORAGE_KEY = "memviz_state";
+
+function tabKey(idx: number | null): string {
+  return idx === null ? "blank" : String(idx);
+}
+
+function loadState(): { tab: number | null; codes: Record<string, string> } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { tab: 0, codes: {} };
+}
+
+function saveState(tab: number | null, codes: Record<string, string>) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ tab, codes }));
+  } catch {}
+}
 
 export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
-  const [code, setCode] = useState(EXAMPLES[0].code);
+  const [codesMap, setCodesMap] = useState<Record<string, string>>({});
   const [selectedExample, setSelectedExample] = useState<number | null>(0);
+  const [code, setCode] = useState(EXAMPLES[0].code);
   const [showExamples, setShowExamples] = useState(false);
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -78,33 +96,54 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     if (/Mac|iPhone|iPad/.test(navigator.userAgent)) {
       setModKey("⌘");
     }
-    try {
-      const savedCode = localStorage.getItem(STORAGE_KEY_CODE);
-      const savedExample = localStorage.getItem(STORAGE_KEY_EXAMPLE);
-      if (savedCode !== null) {
-        setCode(savedCode);
-        setSelectedExample(savedExample === "null" ? null : Number(savedExample));
-      }
-    } catch {}
+    const saved = loadState();
+    setSelectedExample(saved.tab);
+    setCodesMap(saved.codes);
+    const key = tabKey(saved.tab);
+    if (key in saved.codes) {
+      setCode(saved.codes[key]);
+    } else if (saved.tab !== null && saved.tab < EXAMPLES.length) {
+      setCode(EXAMPLES[saved.tab].code);
+    } else {
+      setCode("");
+    }
   }, []);
 
-  // Persist to localStorage on change
+  // Persist to localStorage whenever code or tab changes
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_CODE, code);
-      localStorage.setItem(STORAGE_KEY_EXAMPLE, String(selectedExample));
-    } catch {}
+    setCodesMap(prev => {
+      const next = { ...prev, [tabKey(selectedExample)]: code };
+      saveState(selectedExample, next);
+      return next;
+    });
   }, [code, selectedExample]);
 
-  function selectExample(idx: number) {
+  function switchTab(idx: number | null) {
+    // Save current code for the current tab
+    const currentKey = tabKey(selectedExample);
+    const updatedMap = { ...codesMap, [currentKey]: code };
+    setCodesMap(updatedMap);
+
+    // Switch to new tab
     setSelectedExample(idx);
-    setCode(EXAMPLES[idx].code);
     setShowExamples(false);
+
+    const newKey = tabKey(idx);
+    if (newKey in updatedMap) {
+      setCode(updatedMap[newKey]);
+    } else if (idx !== null && idx < EXAMPLES.length) {
+      setCode(EXAMPLES[idx].code);
+    } else {
+      setCode("");
+    }
+  }
+
+  function selectExample(idx: number) {
+    switchTab(idx);
   }
 
   function handleNew() {
-    setSelectedExample(null);
-    setCode("");
+    switchTab(null);
     textareaRef.current?.focus();
   }
 
@@ -127,6 +166,8 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   function handleReset() {
     if (selectedExample !== null) {
       setCode(EXAMPLES[selectedExample].code);
+    } else {
+      setCode("");
     }
   }
 
