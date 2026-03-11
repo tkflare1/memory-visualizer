@@ -167,4 +167,46 @@ pts[2].x = 5;
 pts[2].y = 6;
 `,
   },
+  {
+    title: "Section Leaders",
+    description: "Structs with strings, pointer sharing, and address-of through nested access.",
+    code: `struct Beverage {
+    string name;
+    int mgCaffeine;
+};
+
+struct SectionLeader {
+    string name;
+    Beverage* favBeverage;
+    int numQuartersSLing;
+};
+
+SectionLeader* SLs = new SectionLeader[3];
+SLs[0].name = "Anushka";
+SLs[1].name = "Tommy";
+SLs[2].name = "Lucas";
+
+SLs[0].numQuartersSLing = 2;
+SLs[1].numQuartersSLing = 7;
+SLs[2].numQuartersSLing = 3;
+
+Beverage* matcha = new Beverage;
+matcha->name = "matcha latte";
+matcha->mgCaffeine = 65;
+
+Beverage* coffee = new Beverage;
+coffee->name = "Tokyo latte";
+
+SLs[0].favBeverage = matcha;
+SLs[1].favBeverage = coffee;
+SLs[2].favBeverage = matcha;
+
+coffee->mgCaffeine = 2 * (SLs[2].numQuartersSLing) + 3 * (matcha->mgCaffeine);
+
+int* caffeine = &((SLs[0].favBeverage)->mgCaffeine);
+
+// What does this print?
+cout << "Today I have consumed " << *caffeine << " mg of caffeine." << endl;
+`,
+  },
 ];

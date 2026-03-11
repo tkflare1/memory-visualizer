@@ -10,10 +10,10 @@ enum TT {
   New, Delete, Nullptr, While, For, If, Else, Return,
   True, False, Cout, Endl,
   // Literals & identifiers
-  IntLit, Ident,
+  IntLit, StringLit, Ident,
   // Multi-char operators
   Arrow, Eq, Neq, Lte, Gte, And, Or, PlusPlus, MinusMinus, PlusEq, MinusEq,
-  ScopeRes,
+  ScopeRes, Shl,
   // Single-char
   LBrace, RBrace, LParen, RParen, LBracket, RBracket,
   Semi, Comma, Dot, Assign,
@@ -57,7 +57,7 @@ function tokenize(code: string): Token[] {
       '->': TT.Arrow, '==': TT.Eq, '!=': TT.Neq, '<=': TT.Lte,
       '>=': TT.Gte, '&&': TT.And, '||': TT.Or, '++': TT.PlusPlus,
       '--': TT.MinusMinus, '+=': TT.PlusEq, '-=': TT.MinusEq,
-      '::': TT.ScopeRes,
+      '::': TT.ScopeRes, '<<': TT.Shl,
     };
     if (two in twoMap) {
       tokens.push({ type: twoMap[two], value: two, line });
@@ -88,10 +88,14 @@ function tokenize(code: string): Token[] {
       continue;
     }
     if (c === '"') {
-      let s = i; i++;
-      while (i < code.length && code[i] !== '"') { if (code[i] === '\\') i++; i++; }
       i++;
-      tokens.push({ type: TT.Ident, value: code.substring(s, i), line });
+      let str = '';
+      while (i < code.length && code[i] !== '"') {
+        if (code[i] === '\\') { str += code[i + 1]; i += 2; }
+        else { str += code[i]; i++; }
+      }
+      i++;
+      tokens.push({ type: TT.StringLit, value: str, line });
       continue;
     }
     i++;
@@ -337,12 +341,16 @@ class Parser {
     if (tok.type === TT.Delete) return this.parseDelete();
     if (tok.type === TT.LBrace) return { kind: 'block', body: this.parseBlock(), line: tok.line };
     if (this.isVarDecl()) return this.parseVarDecl();
-    // cout statement - skip it
     if (tok.type === TT.Cout) {
       this.advance();
-      while (!this.at(TT.Semi) && !this.at(TT.Eof)) this.advance();
+      const parts: Expr[] = [];
+      while (this.at(TT.Shl)) {
+        this.advance();
+        if (this.at(TT.Endl)) { this.advance(); continue; }
+        parts.push(this.parseExpr());
+      }
       this.expect(TT.Semi);
-      return { kind: 'noop', line: tok.line };
+      return { kind: 'cout', parts, line: tok.line };
     }
     const expr = this.parseExpr();
     if (this.match(TT.Assign)) {
@@ -529,6 +537,7 @@ class Parser {
   private parsePrimary(): Expr {
     const tok = this.peek();
     if (tok.type === TT.IntLit) { this.advance(); return { kind: 'int_lit', value: parseInt(tok.value) }; }
+    if (tok.type === TT.StringLit) { this.advance(); return { kind: 'string_lit', strValue: tok.value }; }
     if (tok.type === TT.Nullptr) { this.advance(); return { kind: 'nullptr' }; }
     if (tok.type === TT.True) { this.advance(); return { kind: 'bool_lit', value: true }; }
     if (tok.type === TT.False) { this.advance(); return { kind: 'bool_lit', value: false }; }
@@ -568,8 +577,11 @@ class Parser {
 // EXECUTOR - Memory model and tree-walking interpreter
 // ============================================================
 
-type Value = number | boolean | string | null | StructValue | Value[];
+interface StringVal { __string: string; }
+type Value = number | boolean | string | null | StructValue | StringVal | Value[];
 interface StructValue { __type: string; [field: string]: Value; }
+function isStringVal(v: any): v is StringVal { return v && typeof v === 'object' && '__string' in v; }
+function toStringVal(s: string): StringVal { return { __string: s }; }
 interface Ref { container: Record<string, any> | any[]; key: string | number; }
 class ReturnSignal { constructor(public value: Value) {} }
 
@@ -583,7 +595,7 @@ class Executor {
   heap: Record<string, Value> = {};
   private nextAddr = 1;
   steps: { line: number; fn: string; callerLine?: number; explanation: string;
-    stack: any[]; heap: Record<string, Value>; }[] = [];
+    stack: any[]; heap: Record<string, Value>; output?: string; }[] = [];
   private stepCount = 0;
   private callStack: { fn: string; callerLine: number }[] = [];
   private codeLines: string[] = [];
@@ -620,6 +632,7 @@ class Executor {
     if (typeStr.includes('*')) return null;
     if (base === 'int' || base === 'double' || base === 'char') return null;
     if (base === 'bool') return null;
+    if (base === 'string') return toStringVal('');
     if (base in this.structDefs) return this.makeStruct(base);
     return null;
   }
@@ -644,7 +657,7 @@ class Executor {
   private activeFn() { return this.callStack.length > 0 ? this.callStack[this.callStack.length - 1].fn : 'main'; }
   private callerLine() { return this.callStack.length > 0 ? this.callStack[this.callStack.length - 1].callerLine : undefined; }
 
-  private snapshot(line: number, explanation: string) {
+  private snapshot(line: number, explanation: string, output?: string) {
     if (this.stepCount++ > MAX_STEPS) throw new Error('Execution limit exceeded (too many steps)');
     // Resolve __isRef vars to their actual values before snapshotting
     const snapshotStack = this.stack.map(frame => {
@@ -665,6 +678,7 @@ class Executor {
       line, fn: this.activeFn(), callerLine: this.callerLine(), explanation,
       stack: JSON.parse(JSON.stringify(snapshotStack)),
       heap: JSON.parse(JSON.stringify(this.heap)),
+      output,
     });
   }
 
@@ -776,6 +790,7 @@ class Executor {
   evalExpr(expr: Expr): Value {
     switch (expr.kind) {
       case 'int_lit': return expr.value;
+      case 'string_lit': return toStringVal(expr.strValue);
       case 'nullptr': return null;
       case 'bool_lit': return expr.value;
       case 'var_ref': {
@@ -865,7 +880,14 @@ class Executor {
         const l = this.evalExpr(expr.left);
         const r = this.evalExpr(expr.right);
         switch (expr.op) {
-          case '+': return (l as number) + (r as number);
+          case '+': {
+            if (isStringVal(l) || isStringVal(r)) {
+              const ls = isStringVal(l) ? l.__string : String(l ?? '');
+              const rs = isStringVal(r) ? r.__string : String(r ?? '');
+              return toStringVal(ls + rs);
+            }
+            return (l as number) + (r as number);
+          }
           case '-': return (l as number) - (r as number);
           case '*': return (l as number) * (r as number);
           case '/': return Math.trunc((l as number) / (r as number));
@@ -1082,6 +1104,15 @@ class Executor {
         this.snapshot(line, codeLine || 'Delete');
         break;
       }
+      case 'cout': {
+        const output = (stmt as any).parts.map((p: Expr) => {
+          const v = this.evalExpr(p);
+          if (isStringVal(v)) return v.__string;
+          return v === null ? 'nullptr' : String(v);
+        }).join('');
+        this.snapshot(line, codeLine || 'cout', output || undefined);
+        break;
+      }
       case 'expr_stmt': {
         this.evalExpr(stmt.expr);
         this.snapshot(line, codeLine || 'Expression');
@@ -1293,6 +1324,7 @@ function serializeTrace(executor: Executor, codeLines: string[], program: Progra
         ? findLineInFunction(callerFn, snap.callerLine, functions, codeLines)
         : undefined,
       explanation: snap.explanation,
+      output: snap.output,
       stack: stackFrames,
       heap: heapItems,
     };
@@ -1323,6 +1355,7 @@ function serializeStackVar(name: string, val: Value, typeStr: string, structs: R
     if (typeStr.includes('*')) return { id, label, value: '?' };
     return { id, label, value: '?' };
   }
+  if (isStringVal(val)) return { id, label, value: `"${val.__string}"` };
   if (typeof val === 'string') {
     return { id, label, pointsTo: addrToId(val) };
   }
@@ -1335,6 +1368,9 @@ function serializeHeapValue(addr: string, label: string, val: Value, structs: Re
   const id = addrToId(addr);
   if (val === null || val === undefined) {
     return { id, label, value: '?' };
+  }
+  if (isStringVal(val)) {
+    return { id, label, value: `"${val.__string}"` };
   }
   if (typeof val === 'number') {
     return { id, label, value: String(val) };
@@ -1370,6 +1406,8 @@ function serializeHeapValue(addr: string, label: string, val: Value, structs: Re
           } else {
             children.push({ id: fieldId, label: `${f.type} ${f.name}`, value: '?' });
           }
+        } else if (isStringVal(fieldVal)) {
+          children.push({ id: fieldId, label: `${f.type} ${f.name}`, value: `"${fieldVal.__string}"` });
         } else {
           children.push({ id: fieldId, label: `${f.type} ${f.name}`, value: fieldVal === null || fieldVal === undefined ? '?' : String(fieldVal) });
         }

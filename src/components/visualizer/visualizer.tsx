@@ -313,6 +313,11 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
           <p className="min-w-0 text-sm font-medium leading-relaxed text-foreground">
             {currentStep.explanation}
           </p>
+          {currentStep.output && (
+            <p className="min-w-0 rounded-md bg-foreground/5 px-2 py-1 font-mono text-xs text-muted-foreground">
+              Output: {currentStep.output}
+            </p>
+          )}
         </div>
       </div>
 

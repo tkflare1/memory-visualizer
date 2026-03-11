@@ -19,6 +19,7 @@ export interface Step {
   activeFunction: string;
   callerLine?: number;
   explanation: string;
+  output?: string;
   stack: StackFrame[];
   heap: MemoryItem[];
 }
