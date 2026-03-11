@@ -31,7 +31,7 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
       >
         <div
           className={cn(
-            "flex items-center gap-2 border-b px-4 py-2 text-sm font-bold",
+            "flex items-center gap-2 border-b px-4 py-2.5 text-sm font-bold",
             isOrphaned
               ? "border-danger/20 text-danger/80"
               : depth === 0
@@ -41,7 +41,7 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
         >
           <span>{item.label}</span>
           {item.address && (
-            <span className="ml-auto font-mono text-[10px] font-normal text-muted/30">
+            <span className="ml-auto font-mono text-[11px] font-normal text-muted-foreground/50">
               {item.address}
             </span>
           )}
@@ -51,7 +51,7 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
             </span>
           )}
         </div>
-        <div className="flex flex-col gap-0.5 p-2">
+        <div className="flex flex-col gap-0.5 p-2.5">
           {item.children!.map((child) => (
             <MemoryBlock key={child.id} item={child} depth={depth + 1} />
           ))}
@@ -65,7 +65,7 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
       data-cell-id={item.id}
       data-changed={isChanged || undefined}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-4 py-1.5 text-sm transition-all duration-300",
+        "flex items-center gap-3 rounded-lg px-4 py-2 text-sm transition-all duration-300",
         isChanged && "cell-changed",
         isOrphaned && "opacity-40"
       )}
@@ -73,7 +73,7 @@ export function MemoryBlock({ item, depth = 0 }: MemoryBlockProps) {
       <span className="min-w-0 shrink-0 font-medium text-muted-foreground">
         {item.label}
         {item.address && (
-          <span className="ml-1.5 font-mono text-[10px] text-muted/25">
+          <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/45">
             {item.address}
           </span>
         )}

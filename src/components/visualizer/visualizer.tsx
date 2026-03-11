@@ -89,18 +89,18 @@ function HeapPanel({ items }: { items: MemoryItem[] }) {
       ) : (
         <>
           {arrayItems.length > 0 && (
-            <div className="flex flex-wrap items-start gap-3">
+            <div className="flex flex-wrap items-start gap-4 pb-2">
               {arrayItems.map((item) => (
-                <div key={item.id} className="w-[240px] shrink-0">
+                <div key={item.id} className="w-[260px] shrink-0">
                   <MemoryBlock item={item} depth={0} />
                 </div>
               ))}
             </div>
           )}
           {standaloneItems.length > 0 && (
-            <div className="flex flex-wrap items-start gap-3">
+            <div className="flex flex-wrap items-start gap-4 pt-2">
               {standaloneItems.map((item) => (
-                <div key={item.id} className="w-[240px] shrink-0">
+                <div key={item.id} className="w-[260px] shrink-0">
                   <MemoryBlock item={item} depth={0} />
                 </div>
               ))}
@@ -111,9 +111,9 @@ function HeapPanel({ items }: { items: MemoryItem[] }) {
               <p className="mb-2 text-xs font-bold uppercase tracking-wider text-danger/60">
                 Orphaned / Leaked Memory
               </p>
-              <div className="flex flex-wrap items-start gap-3">
+              <div className="flex flex-wrap items-start gap-4">
                 {orphaned.map((item) => (
-                  <div key={item.id} className="w-[240px] shrink-0">
+                  <div key={item.id} className="w-[260px] shrink-0">
                     <MemoryBlock item={item} depth={0} />
                   </div>
                 ))}
@@ -287,9 +287,9 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
         <div ref={memoryScrollRef} className="min-h-0 flex-1 overflow-auto bg-background">
           <div
             ref={memoryRef}
-            className="relative flex min-h-full gap-8 p-6"
+            className="relative flex min-h-full gap-10 p-6"
           >
-            <div className="w-[260px] shrink-0">
+            <div className="w-[280px] shrink-0">
               <StackPanel frames={currentStep.stack} />
             </div>
             <div className="min-w-0 flex-1">
@@ -306,17 +306,19 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
 
       {/* Explanation bar */}
       <div className="border-t-2 border-accent/20 bg-accent/4 px-5 py-3">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 shrink-0 rounded-lg bg-accent/15 px-2.5 py-1 text-xs font-bold tabular-nums text-accent">
-            Step {step + 1}/{trace.steps.length}
-          </span>
-          <p className="min-w-0 text-sm font-medium leading-relaxed text-foreground">
-            {currentStep.explanation}
-          </p>
-          {currentStep.output && (
-            <p className="min-w-0 rounded-md bg-foreground/5 px-2 py-1 font-mono text-xs text-muted-foreground">
-              Output: {currentStep.output}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 shrink-0 rounded-lg bg-accent/15 px-2.5 py-1 text-xs font-bold tabular-nums text-accent">
+              Step {step + 1}/{trace.steps.length}
+            </span>
+            <p className="min-w-0 flex-1 text-sm font-medium leading-relaxed text-foreground">
+              {currentStep.explanation}
             </p>
+          </div>
+          {currentStep.output && (
+            <div className="rounded-lg border border-foreground/10 bg-foreground/5 px-3 py-2 font-mono text-sm text-foreground">
+              {currentStep.output}
+            </div>
           )}
         </div>
       </div>
