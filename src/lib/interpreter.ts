@@ -91,9 +91,10 @@ function tokenize(code: string): Token[] {
       i++;
       let str = '';
       while (i < code.length && code[i] !== '"') {
-        if (code[i] === '\\') { str += code[i + 1]; i += 2; }
+        if (code[i] === '\\' && i + 1 < code.length) { str += code[i + 1]; i += 2; }
         else { str += code[i]; i++; }
       }
+      if (i >= code.length) throw new Error(`Unterminated string literal at line ${line}`);
       i++;
       tokens.push({ type: TT.StringLit, value: str, line });
       continue;
@@ -550,7 +551,13 @@ class Parser {
     }
     if (tok.type === TT.New) {
       this.advance();
-      const typeName = this.advance().value;
+      const typeToken = this.advance();
+      if (typeToken.type !== TT.Ident && typeToken.type !== TT.Int &&
+          typeToken.type !== TT.Double && typeToken.type !== TT.Char &&
+          typeToken.type !== TT.Bool) {
+        throw new Error(`Expected type name after 'new' at line ${typeToken.line}`);
+      }
+      const typeName = typeToken.value;
       if (this.at(TT.LBracket)) {
         this.advance();
         const size = this.parseExpr();
@@ -640,7 +647,8 @@ class Executor {
   makeStruct(typeName: string): StructValue {
     const sd = this.structDefs[typeName];
     if (!sd) throw new Error(`Unknown struct type: ${typeName}`);
-    const obj: StructValue = { __type: typeName };
+    const obj: StructValue = Object.create(null);
+    obj.__type = typeName;
     for (const f of sd.fields) {
       if (f.arraySize !== null) {
         obj[f.name] = Array.from({ length: f.arraySize }, () => this.defaultValue(f.type));
@@ -823,10 +831,15 @@ class Executor {
         if (typeof base === 'string') {
           const heapObj = this.heap[base];
           if (heapObj && typeof heapObj === 'object' && '__elements' in (heapObj as any)) {
-            return (heapObj as any).__elements[idx];
+            const arr = (heapObj as any).__elements;
+            if (idx < 0 || idx >= (heapObj as any).__count) throw new Error(`Array index ${idx} out of bounds (size ${(heapObj as any).__count})`);
+            return arr[idx];
           }
         }
-        if (Array.isArray(base)) return base[idx];
+        if (Array.isArray(base)) {
+          if (idx < 0 || idx >= base.length) throw new Error(`Array index ${idx} out of bounds (size ${base.length})`);
+          return base[idx];
+        }
         throw new Error(`Cannot index into ${typeof base}`);
       }
       case 'deref': {
@@ -890,8 +903,14 @@ class Executor {
           }
           case '-': return (l as number) - (r as number);
           case '*': return (l as number) * (r as number);
-          case '/': return Math.trunc((l as number) / (r as number));
-          case '%': return (l as number) % (r as number);
+          case '/': {
+            if ((r as number) === 0) throw new Error('Division by zero');
+            return Math.trunc((l as number) / (r as number));
+          }
+          case '%': {
+            if ((r as number) === 0) throw new Error('Modulo by zero');
+            return (l as number) % (r as number);
+          }
           case '==': return l === r;
           case '!=': return l !== r;
           case '<': return (l as number) < (r as number);
@@ -912,14 +931,14 @@ class Executor {
       case 'call': return this.callFunction(expr.name, expr.args, expr);
       case 'pre_inc': case 'pre_dec': {
         const ref = this.resolveRef(expr.expr);
-        const cur = (ref.container as any)[ref.key] as number;
+        const cur = ((ref.container as any)[ref.key] ?? 0) as number;
         const nv = expr.kind === 'pre_inc' ? cur + 1 : cur - 1;
         (ref.container as any)[ref.key] = nv;
         return nv;
       }
       case 'post_inc': case 'post_dec': {
         const ref = this.resolveRef(expr.expr);
-        const cur = (ref.container as any)[ref.key] as number;
+        const cur = ((ref.container as any)[ref.key] ?? 0) as number;
         (ref.container as any)[ref.key] = expr.kind === 'post_inc' ? cur + 1 : cur - 1;
         return cur;
       }
@@ -1217,6 +1236,29 @@ function serializeTrace(executor: Executor, codeLines: string[], program: Progra
     return `0x${(base * 0x100).toString(16)}`;
   }
 
+  // Track which heap addresses are arrays so pointers to them can be remapped to first element
+  function collectArrayAddrs(heap: Record<string, any>): Set<string> {
+    const set = new Set<string>();
+    for (const [addr, val] of Object.entries(heap)) {
+      if (val && typeof val === 'object' && '__elements' in val) set.add(addr);
+    }
+    return set;
+  }
+
+  function remapPointsTo(items: MemoryItem[], arrayAddrs: Set<string>) {
+    for (const item of items) {
+      if (item.pointsTo) {
+        // e.g. pointsTo "h1" but the array elements are "h1_0", "h1_1"... → redirect to "h1_0"
+        const rawAddr = item.pointsTo.replace(/^h/, '').replace(/_/g, '.');
+        const baseAddr = rawAddr.split('.')[0];
+        if (arrayAddrs.has(baseAddr) && rawAddr === baseAddr) {
+          item.pointsTo = addrToId(baseAddr + '.0');
+        }
+      }
+      if (item.children) remapPointsTo(item.children, arrayAddrs);
+    }
+  }
+
   // Helper to serialize heap from raw snap data
   function serializeHeapFromSnap(heap: Record<string, any>): MemoryItem[] {
     const items: MemoryItem[] = [];
@@ -1260,7 +1302,12 @@ function serializeTrace(executor: Executor, codeLines: string[], program: Progra
     });
 
     // Serialize current and previous heap
+    const arrayAddrs = collectArrayAddrs(snap.heap);
     const heapItems = serializeHeapFromSnap(snap.heap);
+
+    // Remap pointers to arrays → first element so arrows land correctly
+    remapPointsTo(heapItems, arrayAddrs);
+    for (const frame of stackFrames) remapPointsTo(frame.variables, arrayAddrs);
 
     // Change detection: compare with previous step's serialized heap
     if (stepIdx > 0) {
@@ -1278,12 +1325,26 @@ function serializeTrace(executor: Executor, codeLines: string[], program: Progra
 
     // Orphaned memory detection: walk all pointers from stack to find reachable heap ids
     const reachable = new Set<string>();
+    // Build set of array base prefixes (e.g. "h1") so pointing to h1_0 marks h1_1, h1_2 etc reachable
+    const arrayBasePrefixes = new Set<string>();
+    for (const addr of arrayAddrs) arrayBasePrefixes.add(addrToId(addr));
+
     function markReachable(items: MemoryItem[]) {
       for (const item of items) {
         if (item.pointsTo && !reachable.has(item.pointsTo)) {
           reachable.add(item.pointsTo);
-          // Also mark the parent block reachable (e.g. h1_0 makes h1_0_* reachable)
           const allFlat = flattenItems(heapItems);
+          // If this points to an array element, mark all siblings reachable
+          for (const prefix of arrayBasePrefixes) {
+            if (item.pointsTo.startsWith(prefix + '_')) {
+              for (const h of allFlat) {
+                if (h.id.startsWith(prefix + '_')) {
+                  reachable.add(h.id);
+                  if (h.children) markReachable(h.children);
+                }
+              }
+            }
+          }
           for (const h of allFlat) {
             if (h.id === item.pointsTo || h.id.startsWith(item.pointsTo + '_')) {
               reachable.add(h.id);
