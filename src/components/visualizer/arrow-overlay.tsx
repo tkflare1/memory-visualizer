@@ -8,6 +8,7 @@ interface Pointer {
   color: string;
   label: string;
   fromStack: boolean;
+  inactive: boolean;
 }
 
 interface Arrow {
@@ -20,6 +21,7 @@ interface Arrow {
   color: string;
   label: string;
   showLabel: boolean;
+  inactive: boolean;
 }
 
 const COLORS = [
@@ -48,23 +50,24 @@ export function collectPointers(
     return item.id;
   }
 
-  function traverse(items: { id: string; label?: string; pointsTo?: string; children?: unknown[] }[], fromStack: boolean) {
+  function traverse(items: { id: string; label?: string; pointsTo?: string; children?: unknown[] }[], fromStack: boolean, inactive: boolean) {
     for (const item of items) {
       if (item.pointsTo) {
         const label = extractLabel(item);
-        pointers.push({ sourceId: item.id, targetId: item.pointsTo, color: hashColor(label), label, fromStack });
+        pointers.push({ sourceId: item.id, targetId: item.pointsTo, color: hashColor(label), label, fromStack, inactive });
       }
       if ("children" in item && Array.isArray(item.children)) {
-        traverse(item.children as typeof items, fromStack);
+        traverse(item.children as typeof items, fromStack, inactive);
       }
     }
   }
 
-  // Only draw arrows from the active (topmost) stack frame to avoid clutter during recursion
-  if (stack.length > 0) {
-    traverse(stack[stack.length - 1].variables as any, true);
+  // Draw arrows from all stack frames; mark non-active ones as inactive
+  for (let i = 0; i < stack.length; i++) {
+    const isActive = i === stack.length - 1;
+    traverse(stack[i].variables as any, true, !isActive);
   }
-  traverse(heap as any, false);
+  traverse(heap as any, false, false);
   return pointers;
 }
 
@@ -117,7 +120,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
     const targetYOffsets: Record<string, number> = {};
     const HEAD = 12;
 
-    for (const { sourceId, targetId, color, label, fromStack } of pointers) {
+    for (const { sourceId, targetId, color, label, fromStack, inactive } of pointers) {
       // Prefer the pointer icon element for source positioning
       const srcEl = (container.querySelector(`[data-arrow-src="${sourceId}"]`) ||
         container.querySelector(`[data-cell-id="${sourceId}"]`)) as HTMLElement | null;
@@ -184,7 +187,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       }
 
       const headPath = buildArrowhead(tx, ty, headAngle, HEAD);
-      result.push({ sx, sy, tx, ty, linePath, headPath, color, label, showLabel: false });
+      result.push({ sx, sy, tx, ty, linePath, headPath, color, label, showLabel: false, inactive });
     }
 
     setArrows(result);
@@ -220,22 +223,24 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       {arrows.map((a, i) => {
         const dimmed = hovered !== null && hovered !== i;
         const active = hovered === i;
-        const strokeW = active ? 3 : 2;
+        const isInactive = a.inactive;
+        const strokeW = active ? 3 : isInactive ? 1.5 : 2;
+        const baseOpacity = isInactive ? 0.25 : 1;
         return (
           <g
             key={`${step}-${i}`}
             style={{
-              opacity: dimmed ? 0.08 : 1,
+              opacity: dimmed ? 0.08 : baseOpacity,
               transition: "opacity 0.2s ease, filter 0.2s ease",
-              pointerEvents: "auto",
-              cursor: "pointer",
+              pointerEvents: isInactive ? "none" : "auto",
+              cursor: isInactive ? "default" : "pointer",
               filter: active ? "url(#arrow-glow)" : "none",
             }}
-            onMouseEnter={() => setHovered(i)}
-            onMouseLeave={() => setHovered(null)}
+            onMouseEnter={() => !isInactive && setHovered(i)}
+            onMouseLeave={() => !isInactive && setHovered(null)}
           >
             {/* Source dot */}
-            <circle cx={a.sx} cy={a.sy} r={active ? 5 : 4} fill={a.color} />
+            <circle cx={a.sx} cy={a.sy} r={active ? 5 : isInactive ? 3 : 4} fill={a.color} />
 
             {/* Line / curve — ends at base of arrowhead */}
             <path
