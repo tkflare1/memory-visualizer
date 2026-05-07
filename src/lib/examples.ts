@@ -151,6 +151,32 @@ ListNode* result = reverseList(a);
 `,
   },
   {
+    title: "Cats Problem (Mini)",
+    description: "Pointer aliasing, memory leaks, and address-of through nested structs.",
+    code: `struct Lion {
+    int roar;
+    int *meow;
+};
+
+struct Savanna {
+    int giraffe;
+    Lion cat;
+};
+
+void explore(Savanna *prairie) {
+    Lion *leader = &(prairie->cat);
+    (*leader).meow = new int(2);
+    (*leader).roar = 2;
+    (*leader).meow = new int(3);
+}
+
+Savanna* habitat = new Savanna[3];
+habitat[1].giraffe = 3;
+explore(habitat);
+habitat[0].giraffe = 8;
+`,
+  },
+  {
     title: "Array of Structs",
     description: "Allocate an array of structs and modify individual elements.",
     code: `struct Point {
