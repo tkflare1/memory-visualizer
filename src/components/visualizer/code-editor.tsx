@@ -11,6 +11,8 @@ import {
   Copy,
   Check,
   RotateCcw,
+  Pencil,
+  FileCode,
 } from "lucide-react";
 import { EXAMPLES } from "@/lib/examples";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -21,6 +23,15 @@ interface CodeEditorProps {
   error: string | null;
   isRunning: boolean;
 }
+
+// ─── Types ─────────────────────────────────────────────────────────
+
+interface CustomSnippet {
+  id: string;
+  title: string;
+}
+
+type TabId = number | string;
 
 // ─── Syntax Highlighting ───────────────────────────────────────────
 
@@ -197,32 +208,85 @@ const DELETE_PAIRS: Record<string, string> = {
 
 const STORAGE_KEY = "memviz_state";
 
-function tabKey(idx: number | null): string {
-  return idx === null ? "blank" : String(idx);
+interface SavedState {
+  tab: TabId;
+  codes: Record<string, string>;
+  custom: CustomSnippet[];
 }
 
-function loadState(): { tab: number | null; codes: Record<string, string> } {
+function loadState(): SavedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const custom: CustomSnippet[] = parsed.custom || [];
+      const codes: Record<string, string> = parsed.codes || {};
+      let tab: TabId = parsed.tab ?? 0;
+
+      if (parsed.tab === null) {
+        if (codes["blank"] && codes["blank"].trim()) {
+          const id = `c_${Date.now()}`;
+          custom.push({ id, title: "My Code" });
+          codes[id] = codes["blank"];
+          tab = id;
+        } else {
+          tab = 0;
+        }
+        delete codes["blank"];
+      }
+
+      return { tab, codes, custom };
+    }
   } catch {}
-  return { tab: 0, codes: {} };
+  return { tab: 0, codes: {}, custom: [] };
 }
 
-function saveState(tab: number | null, codes: Record<string, string>) {
+const MAX_CUSTOM_SNIPPETS = 20;
+
+function saveState(tab: TabId, codes: Record<string, string>, custom: CustomSnippet[]) {
+  const payload = JSON.stringify({ tab, codes, custom });
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ tab, codes }));
-  } catch {}
+    localStorage.setItem(STORAGE_KEY, payload);
+  } catch {
+    // Quota exceeded — drop the oldest custom snippets' code until it fits
+    const trimmedCodes = { ...codes };
+    const trimmedCustom = [...custom];
+    while (trimmedCustom.length > 1) {
+      const removed = trimmedCustom.shift()!;
+      if (String(tab) !== removed.id) {
+        delete trimmedCodes[removed.id];
+      }
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ tab, codes: trimmedCodes, custom: trimmedCustom })
+        );
+        return;
+      } catch { /* keep trimming */ }
+    }
+    // Last resort: only keep the active tab's code
+    const minimalCodes: Record<string, string> = {};
+    const key = String(tab);
+    if (key in codes) minimalCodes[key] = codes[key];
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ tab, codes: minimalCodes, custom: trimmedCustom })
+      );
+    } catch { /* storage completely full, nothing we can do */ }
+  }
 }
 
 // ─── Component ─────────────────────────────────────────────────────
 
 export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   const [codesMap, setCodesMap] = useState<Record<string, string>>({});
-  const [selectedExample, setSelectedExample] = useState<number | null>(0);
+  const [customSnippets, setCustomSnippets] = useState<CustomSnippet[]>([]);
+  const [selectedTab, setSelectedTab] = useState<TabId>(0);
   const [code, setCode] = useState(EXAMPLES[0].code);
   const [showExamples, setShowExamples] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
@@ -232,56 +296,110 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
 
   const highlighted = useMemo(() => highlightCpp(code) + "\n", [code]);
 
+  const isCustomTab = typeof selectedTab === "string";
+  const isExampleTab = typeof selectedTab === "number";
+
+  const currentTabLabel = useMemo(() => {
+    if (isExampleTab) return EXAMPLES[selectedTab as number]?.title ?? "Example";
+    const snippet = customSnippets.find(s => s.id === selectedTab);
+    return snippet?.title ?? "Untitled";
+  }, [selectedTab, customSnippets, isExampleTab]);
+
+  // ── Mount: restore from localStorage ──
   useEffect(() => {
     if (/Mac|iPhone|iPad/.test(navigator.userAgent)) {
       setModKey("⌘");
     }
     const saved = loadState();
-    setSelectedExample(saved.tab);
+    setSelectedTab(saved.tab);
     setCodesMap(saved.codes);
-    const key = tabKey(saved.tab);
+    setCustomSnippets(saved.custom);
+    const key = String(saved.tab);
     if (key in saved.codes) {
       setCode(saved.codes[key]);
-    } else if (saved.tab !== null && saved.tab < EXAMPLES.length) {
+    } else if (typeof saved.tab === "number" && saved.tab < EXAMPLES.length) {
       setCode(EXAMPLES[saved.tab].code);
     } else {
       setCode(BLANK_TEMPLATE);
     }
   }, []);
 
+  // ── Persist on change ──
   useEffect(() => {
     setCodesMap(prev => {
-      const next = { ...prev, [tabKey(selectedExample)]: code };
-      saveState(selectedExample, next);
+      const next = { ...prev, [String(selectedTab)]: code };
+      saveState(selectedTab, next, customSnippets);
       return next;
     });
-  }, [code, selectedExample]);
+  }, [code, selectedTab, customSnippets]);
 
-  function switchTab(idx: number | null) {
-    const currentKey = tabKey(selectedExample);
+  // ── Tab switching ──
+  function switchTab(id: TabId) {
+    const currentKey = String(selectedTab);
     const updatedMap = { ...codesMap, [currentKey]: code };
     setCodesMap(updatedMap);
 
-    setSelectedExample(idx);
+    setSelectedTab(id);
     setShowExamples(false);
+    setEditingId(null);
 
-    const newKey = tabKey(idx);
+    const newKey = String(id);
     if (newKey in updatedMap) {
       setCode(updatedMap[newKey]);
-    } else if (idx !== null && idx < EXAMPLES.length) {
-      setCode(EXAMPLES[idx].code);
+    } else if (typeof id === "number" && id < EXAMPLES.length) {
+      setCode(EXAMPLES[id].code);
     } else {
       setCode(BLANK_TEMPLATE);
     }
   }
 
-  function selectExample(idx: number) {
-    switchTab(idx);
+  // ── Custom snippet management ──
+  function handleNew() {
+    if (customSnippets.length >= MAX_CUSTOM_SNIPPETS) {
+      const oldest = customSnippets[0];
+      if (String(selectedTab) === oldest.id) {
+        setCustomSnippets(prev => prev.slice(1));
+      } else {
+        setCustomSnippets(prev => prev.slice(1));
+        setCodesMap(prev => {
+          const next = { ...prev };
+          delete next[oldest.id];
+          return next;
+        });
+      }
+    }
+    const id = `c_${Date.now()}`;
+    const snippet: CustomSnippet = { id, title: "Untitled" };
+    setCustomSnippets(prev => [...prev, snippet]);
+    switchTab(id);
+    setEditingId(id);
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
-  function handleNew() {
-    switchTab(null);
-    textareaRef.current?.focus();
+  function handleDeleteSnippet(id: string) {
+    setCustomSnippets(prev => prev.filter(s => s.id !== id));
+    setCodesMap(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (String(selectedTab) === id) {
+      setSelectedTab(0);
+      const savedCode = codesMap[String(0)];
+      setCode(savedCode ?? EXAMPLES[0].code);
+    }
+    if (editingId === id) setEditingId(null);
+  }
+
+  function handleRenameSnippet(id: string, title: string) {
+    setCustomSnippets(prev =>
+      prev.map(s => s.id === id ? { ...s, title: title.trim() || "Untitled" } : s)
+    );
+    setEditingId(null);
+  }
+
+  function selectExample(idx: number) {
+    switchTab(idx);
   }
 
   function handleClear() {
@@ -301,13 +419,14 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   }
 
   function handleReset() {
-    if (selectedExample !== null) {
-      setCode(EXAMPLES[selectedExample].code);
+    if (isExampleTab) {
+      setCode(EXAMPLES[selectedTab as number].code);
     } else {
       setCode(BLANK_TEMPLATE);
     }
   }
 
+  // ── Scroll sync ──
   const syncScroll = useCallback(() => {
     if (textareaRef.current) {
       const { scrollTop, scrollLeft } = textareaRef.current;
@@ -319,13 +438,13 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     }
   }, []);
 
+  // ── Keyboard handling ──
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const ta = textareaRef.current;
     if (!ta) return;
 
     const { selectionStart, selectionEnd, value } = ta;
 
-    // ── Tab / Shift+Tab ──
     if (e.key === "Tab") {
       e.preventDefault();
       if (e.shiftKey) {
@@ -349,7 +468,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
-    // ── Enter with smart indent ──
     if (e.key === "Enter") {
       e.preventDefault();
       const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
@@ -386,7 +504,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
-    // ── Backspace: delete matching pair ──
     if (e.key === "Backspace" && selectionStart === selectionEnd) {
       const before = value[selectionStart - 1];
       const after = value[selectionStart];
@@ -401,7 +518,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       }
     }
 
-    // ── Auto-close brackets ──
     if (BRACKET_PAIRS[e.key]) {
       e.preventDefault();
       const close = BRACKET_PAIRS[e.key];
@@ -414,7 +530,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
-    // ── Skip over closing bracket ──
     if (CLOSE_BRACKETS.has(e.key) && value[selectionStart] === e.key) {
       e.preventDefault();
       requestAnimationFrame(() => {
@@ -423,7 +538,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
-    // ── Auto-close quotes ──
     if (QUOTE_CHARS.has(e.key)) {
       if (value[selectionStart] === e.key) {
         e.preventDefault();
@@ -446,6 +560,7 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     }
   }
 
+  // ── Global shortcuts ──
   useEffect(() => {
     function handleGlobalKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -456,6 +571,8 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     window.addEventListener("keydown", handleGlobalKey);
     return () => window.removeEventListener("keydown", handleGlobalKey);
   }, [code, isRunning, onRun]);
+
+  // ─── Render ──────────────────────────────────────────────────────
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -476,47 +593,94 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Left side: examples */}
+        {/* Left side: sidebar */}
         <div className="hidden w-[280px] shrink-0 flex-col border-r-2 border-card-border bg-card/50 md:flex">
           <div className="flex items-center justify-between border-b border-card-border px-5 py-3">
             <h2 className="text-xs font-bold uppercase tracking-widest text-muted/60">
-              Examples
+              Snippets
             </h2>
             <button
               onClick={handleNew}
               className="flex items-center gap-1.5 rounded-lg bg-accent/10 px-2.5 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/20"
-              title="New blank snippet"
+              title={`Create a new snippet (${customSnippets.length}/${MAX_CUSTOM_SNIPPETS})`}
             >
               <Plus size={13} />
               New
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <button
-              onClick={handleNew}
-              className={cn(
-                "w-full border-b border-card-border/30 px-5 py-4 text-left transition-colors",
-                selectedExample === null
-                  ? "bg-accent/8 text-foreground"
-                  : "text-muted-foreground hover:bg-card-border/20 hover:text-foreground"
-              )}
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Plus size={14} className="text-accent" />
-                Blank — Write your own
-              </div>
-              <div className="mt-1 text-xs leading-relaxed text-muted/60">
-                Start with an int main() scaffold.
-              </div>
-            </button>
+            {/* Custom snippets */}
+            {customSnippets.length > 0 && (
+              <>
+                <div className="px-5 pb-1 pt-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted/40">
+                    Your Code
+                  </span>
+                </div>
+                {customSnippets.map((snippet) => (
+                  <div
+                    key={snippet.id}
+                    onClick={() => switchTab(snippet.id)}
+                    className={cn(
+                      "group flex w-full cursor-pointer items-start justify-between border-b border-card-border/30 px-5 py-3.5 text-left transition-colors",
+                      selectedTab === snippet.id
+                        ? "bg-accent/8 text-foreground"
+                        : "text-muted-foreground hover:bg-card-border/20 hover:text-foreground"
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      {editingId === snippet.id ? (
+                        <input
+                          autoFocus
+                          defaultValue={snippet.title}
+                          onFocus={(e) => e.target.select()}
+                          onBlur={(e) => handleRenameSnippet(snippet.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRenameSnippet(snippet.id, e.currentTarget.value);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full rounded border border-accent/40 bg-background/50 px-1.5 py-0.5 text-sm font-semibold outline-none focus:border-accent"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <FileCode size={14} className="shrink-0 text-accent/60" />
+                          <span className="truncate text-sm font-semibold">{snippet.title}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingId(snippet.id); }}
+                            className="shrink-0 rounded p-0.5 text-muted/30 opacity-0 transition-all hover:text-accent group-hover:opacity-100"
+                            title="Rename snippet"
+                          >
+                            <Pencil size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteSnippet(snippet.id); }}
+                      className="ml-2 shrink-0 rounded p-1 text-muted/30 opacity-0 transition-all hover:bg-danger/10 hover:text-danger group-hover:opacity-100"
+                      title="Delete snippet"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+                <div className="px-5 pb-1 pt-4">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted/40">
+                    Built-in Examples
+                  </span>
+                </div>
+              </>
+            )}
 
+            {/* Built-in examples */}
             {EXAMPLES.map((ex, i) => (
               <button
                 key={i}
                 onClick={() => selectExample(i)}
                 className={cn(
                   "w-full border-b border-card-border/30 px-5 py-4 text-left transition-colors",
-                  i === selectedExample
+                  i === selectedTab
                     ? "bg-accent/8 text-foreground"
                     : "text-muted-foreground hover:bg-card-border/20 hover:text-foreground"
                 )}
@@ -538,27 +702,42 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
               onClick={() => setShowExamples(!showExamples)}
               className="flex w-full items-center justify-between px-5 py-3 text-sm text-muted-foreground"
             >
-              <span>
-                {selectedExample !== null
-                  ? `Example: ${EXAMPLES[selectedExample].title}`
-                  : "Blank — Write your own"}
-              </span>
+              <span>{currentTabLabel}</span>
               <ChevronDown size={16} />
             </button>
             {showExamples && (
-              <div className="absolute inset-x-0 top-full z-20 border-b border-card-border bg-card shadow-lg">
+              <div className="absolute inset-x-0 top-full z-20 max-h-80 overflow-y-auto border-b border-card-border bg-card shadow-lg">
                 <button
                   onClick={handleNew}
-                  className="w-full px-5 py-3 text-left text-sm text-muted-foreground hover:bg-card-border/20"
+                  className="w-full border-b border-card-border/30 px-5 py-3 text-left text-sm text-accent hover:bg-card-border/20"
                 >
-                  <Plus size={14} className="mr-1.5 inline text-accent" />
-                  Blank — Write your own
+                  <Plus size={14} className="mr-1.5 inline" />
+                  New snippet
                 </button>
+                {customSnippets.map((snippet) => (
+                  <button
+                    key={snippet.id}
+                    onClick={() => { switchTab(snippet.id); setShowExamples(false); }}
+                    className={cn(
+                      "w-full px-5 py-3 text-left text-sm hover:bg-card-border/20",
+                      selectedTab === snippet.id ? "text-accent" : "text-muted-foreground"
+                    )}
+                  >
+                    <FileCode size={14} className="mr-1.5 inline text-accent/60" />
+                    {snippet.title}
+                  </button>
+                ))}
+                {customSnippets.length > 0 && (
+                  <div className="border-t border-card-border/30" />
+                )}
                 {EXAMPLES.map((ex, i) => (
                   <button
                     key={i}
-                    onClick={() => selectExample(i)}
-                    className="w-full px-5 py-3 text-left text-sm text-muted-foreground hover:bg-card-border/20"
+                    onClick={() => { selectExample(i); setShowExamples(false); }}
+                    className={cn(
+                      "w-full px-5 py-3 text-left text-sm hover:bg-card-border/20",
+                      selectedTab === i ? "text-accent" : "text-muted-foreground"
+                    )}
                   >
                     {ex.title}
                   </button>
@@ -590,7 +769,7 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
             <button
               onClick={handleReset}
               className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card-border/30 hover:text-foreground"
-              title={selectedExample !== null ? "Reset to original example code" : "Reset to blank template"}
+              title={isExampleTab ? "Reset to original example code" : "Reset to blank template"}
             >
               <RotateCcw size={13} />
               Reset
@@ -633,7 +812,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
 
               {/* Editor area: highlight layer + textarea */}
               <div className="relative min-w-0 flex-1 bg-code-bg">
-                {/* Syntax-highlighted underlay */}
                 <pre
                   ref={highlightRef}
                   className="editor-highlight pointer-events-none absolute inset-0 overflow-hidden whitespace-pre bg-transparent py-6 pl-3 pr-6 font-mono text-[14px] leading-relaxed"
@@ -642,7 +820,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
                   <code dangerouslySetInnerHTML={{ __html: highlighted }} />
                 </pre>
 
-                {/* Transparent textarea on top */}
                 <textarea
                   ref={textareaRef}
                   value={code}

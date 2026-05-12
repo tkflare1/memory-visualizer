@@ -894,6 +894,14 @@ class Executor {
         return this.alloc({ __type: `${tn}[]`, __count: count, __elements: elements } as any);
       }
       case 'binop': {
+        if (expr.op === '&&') {
+          const l = this.evalExpr(expr.left);
+          return !l ? false : !!this.evalExpr(expr.right);
+        }
+        if (expr.op === '||') {
+          const l = this.evalExpr(expr.left);
+          return l ? true : !!this.evalExpr(expr.right);
+        }
         const l = this.evalExpr(expr.left);
         const r = this.evalExpr(expr.right);
         switch (expr.op) {
@@ -921,8 +929,6 @@ class Executor {
           case '>': return (l as number) > (r as number);
           case '<=': return (l as number) <= (r as number);
           case '>=': return (l as number) >= (r as number);
-          case '&&': return !!(l) && !!(r);
-          case '||': return !!(l) || !!(r);
           default: throw new Error(`Unknown operator: ${expr.op}`);
         }
       }
