@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   Play,
   ChevronDown,
@@ -22,12 +22,129 @@ interface CodeEditorProps {
   isRunning: boolean;
 }
 
-const BRACKET_PAIRS: Record<string, string> = {
-  "(": ")",
-  "{": "}",
-  "[": "]",
-};
-const CLOSE_BRACKETS = new Set([")", "}", "]"]);
+// ─── Syntax Highlighting ───────────────────────────────────────────
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const CPP_KEYWORDS = new Set([
+  "if", "else", "while", "for", "return", "break", "continue",
+  "switch", "case", "default", "struct", "class", "new", "delete",
+  "typedef", "const", "nullptr", "true", "false", "namespace", "using",
+  "template", "typename", "public", "private", "protected", "virtual",
+  "override", "static", "extern", "sizeof", "this", "throw", "try", "catch",
+]);
+
+const CPP_TYPES = new Set([
+  "int", "void", "double", "float", "char", "bool", "string",
+  "auto", "long", "short", "unsigned", "signed", "size_t",
+]);
+
+const CPP_BUILTINS = new Set([
+  "cout", "cin", "endl", "cerr", "printf", "scanf", "NULL", "std",
+]);
+
+function highlightCpp(code: string): string {
+  const out: string[] = [];
+  let i = 0;
+  const n = code.length;
+
+  while (i < n) {
+    if (code[i] === "/" && code[i + 1] === "/") {
+      let end = code.indexOf("\n", i);
+      if (end === -1) end = n;
+      out.push(`<span class="syn-cmt">${escapeHtml(code.slice(i, end))}</span>`);
+      i = end;
+      continue;
+    }
+
+    if (code[i] === "/" && code[i + 1] === "*") {
+      let end = code.indexOf("*/", i + 2);
+      if (end === -1) end = n; else end += 2;
+      out.push(`<span class="syn-cmt">${escapeHtml(code.slice(i, end))}</span>`);
+      i = end;
+      continue;
+    }
+
+    if (code[i] === '"') {
+      let j = i + 1;
+      while (j < n && code[j] !== '"' && code[j] !== "\n") {
+        if (code[j] === "\\") j++;
+        j++;
+      }
+      if (j < n && code[j] === '"') j++;
+      out.push(`<span class="syn-str">${escapeHtml(code.slice(i, j))}</span>`);
+      i = j;
+      continue;
+    }
+
+    if (code[i] === "'") {
+      let j = i + 1;
+      while (j < n && code[j] !== "'" && code[j] !== "\n") {
+        if (code[j] === "\\") j++;
+        j++;
+      }
+      if (j < n && code[j] === "'") j++;
+      out.push(`<span class="syn-str">${escapeHtml(code.slice(i, j))}</span>`);
+      i = j;
+      continue;
+    }
+
+    if (code[i] === "#") {
+      let end = code.indexOf("\n", i);
+      if (end === -1) end = n;
+      out.push(`<span class="syn-prep">${escapeHtml(code.slice(i, end))}</span>`);
+      i = end;
+      continue;
+    }
+
+    if (code[i] >= "0" && code[i] <= "9") {
+      let j = i;
+      while (j < n && /[0-9a-fA-FxX.]/.test(code[j])) j++;
+      out.push(`<span class="syn-num">${code.slice(i, j)}</span>`);
+      i = j;
+      continue;
+    }
+
+    if (/[a-zA-Z_]/.test(code[i])) {
+      let j = i;
+      while (j < n && /[a-zA-Z0-9_]/.test(code[j])) j++;
+      const word = code.slice(i, j);
+
+      if (CPP_TYPES.has(word)) {
+        out.push(`<span class="syn-type">${word}</span>`);
+      } else if (CPP_KEYWORDS.has(word)) {
+        out.push(`<span class="syn-kw">${word}</span>`);
+      } else if (CPP_BUILTINS.has(word)) {
+        out.push(`<span class="syn-bi">${word}</span>`);
+      } else {
+        let k = j;
+        while (k < n && (code[k] === " " || code[k] === "\t")) k++;
+        if (code[k] === "(") {
+          out.push(`<span class="syn-fn">${escapeHtml(word)}</span>`);
+        } else {
+          out.push(escapeHtml(word));
+        }
+      }
+      i = j;
+      continue;
+    }
+
+    if (code[i] === "\n") {
+      out.push("\n");
+      i++;
+      continue;
+    }
+
+    out.push(escapeHtml(code[i]));
+    i++;
+  }
+
+  return out.join("");
+}
+
+// ─── Code Formatting ───────────────────────────────────────────────
 
 function formatCppCode(code: string): string {
   const lines = code.split("\n");
@@ -59,6 +176,25 @@ function formatCppCode(code: string): string {
   return result.join("\n");
 }
 
+// ─── Constants & Persistence ───────────────────────────────────────
+
+const BLANK_TEMPLATE = `int main() {
+    
+    return 0;
+}
+`;
+
+const BRACKET_PAIRS: Record<string, string> = {
+  "(": ")",
+  "{": "}",
+  "[": "]",
+};
+const CLOSE_BRACKETS = new Set([")", "}", "]"]);
+const QUOTE_CHARS = new Set(['"', "'"]);
+const DELETE_PAIRS: Record<string, string> = {
+  "(": ")", "{": "}", "[": "]", '"': '"', "'": "'",
+};
+
 const STORAGE_KEY = "memviz_state";
 
 function tabKey(idx: number | null): string {
@@ -79,6 +215,8 @@ function saveState(tab: number | null, codes: Record<string, string>) {
   } catch {}
 }
 
+// ─── Component ─────────────────────────────────────────────────────
+
 export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   const [codesMap, setCodesMap] = useState<Record<string, string>>({});
   const [selectedExample, setSelectedExample] = useState<number | null>(0);
@@ -87,11 +225,13 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   const [copied, setCopied] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLPreElement>(null);
 
   const lineCount = code.split("\n").length;
   const [modKey, setModKey] = useState("Ctrl");
 
-  // Restore from localStorage on mount
+  const highlighted = useMemo(() => highlightCpp(code) + "\n", [code]);
+
   useEffect(() => {
     if (/Mac|iPhone|iPad/.test(navigator.userAgent)) {
       setModKey("⌘");
@@ -105,11 +245,10 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     } else if (saved.tab !== null && saved.tab < EXAMPLES.length) {
       setCode(EXAMPLES[saved.tab].code);
     } else {
-      setCode("");
+      setCode(BLANK_TEMPLATE);
     }
   }, []);
 
-  // Persist to localStorage whenever code or tab changes
   useEffect(() => {
     setCodesMap(prev => {
       const next = { ...prev, [tabKey(selectedExample)]: code };
@@ -119,12 +258,10 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
   }, [code, selectedExample]);
 
   function switchTab(idx: number | null) {
-    // Save current code for the current tab
     const currentKey = tabKey(selectedExample);
     const updatedMap = { ...codesMap, [currentKey]: code };
     setCodesMap(updatedMap);
 
-    // Switch to new tab
     setSelectedExample(idx);
     setShowExamples(false);
 
@@ -134,7 +271,7 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     } else if (idx !== null && idx < EXAMPLES.length) {
       setCode(EXAMPLES[idx].code);
     } else {
-      setCode("");
+      setCode(BLANK_TEMPLATE);
     }
   }
 
@@ -167,28 +304,31 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
     if (selectedExample !== null) {
       setCode(EXAMPLES[selectedExample].code);
     } else {
-      setCode("");
+      setCode(BLANK_TEMPLATE);
     }
   }
 
-  // Sync line numbers scroll with textarea scroll
   const syncScroll = useCallback(() => {
-    if (textareaRef.current && lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    if (textareaRef.current) {
+      const { scrollTop, scrollLeft } = textareaRef.current;
+      if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = scrollTop;
+      if (highlightRef.current) {
+        highlightRef.current.scrollTop = scrollTop;
+        highlightRef.current.scrollLeft = scrollLeft;
+      }
     }
   }, []);
 
-  // Handle Tab, Shift+Tab, Enter auto-indent, bracket auto-close
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const ta = textareaRef.current;
     if (!ta) return;
 
     const { selectionStart, selectionEnd, value } = ta;
 
+    // ── Tab / Shift+Tab ──
     if (e.key === "Tab") {
       e.preventDefault();
       if (e.shiftKey) {
-        // Shift+Tab: dedent
         const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
         const lineText = value.slice(lineStart, selectionEnd);
         const dedented = lineText.replace(/^(    |\t)/, "");
@@ -200,7 +340,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
           ta.selectionEnd = Math.max(lineStart, selectionEnd - removed);
         });
       } else {
-        // Tab: insert 4 spaces
         const newVal = value.slice(0, selectionStart) + "    " + value.slice(selectionEnd);
         setCode(newVal);
         requestAnimationFrame(() => {
@@ -210,14 +349,29 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
+    // ── Enter with smart indent ──
     if (e.key === "Enter") {
       e.preventDefault();
       const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
       const currentLine = value.slice(lineStart, selectionStart);
       const indentMatch = currentLine.match(/^(\s*)/);
-      let indent = indentMatch ? indentMatch[1] : "";
+      const baseIndent = indentMatch ? indentMatch[1] : "";
 
-      // Increase indent after {
+      const charBefore = value[selectionStart - 1];
+      const charAfter = value[selectionStart];
+
+      if (charBefore === "{" && charAfter === "}") {
+        const innerIndent = baseIndent + "    ";
+        const insertion = "\n" + innerIndent + "\n" + baseIndent;
+        const newVal = value.slice(0, selectionStart) + insertion + value.slice(selectionEnd);
+        setCode(newVal);
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = selectionStart + 1 + innerIndent.length;
+        });
+        return;
+      }
+
+      let indent = baseIndent;
       const trimmedBefore = value.slice(0, selectionStart).trimEnd();
       if (trimmedBefore.endsWith("{")) {
         indent += "    ";
@@ -232,7 +386,22 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
-    // Auto-close brackets
+    // ── Backspace: delete matching pair ──
+    if (e.key === "Backspace" && selectionStart === selectionEnd) {
+      const before = value[selectionStart - 1];
+      const after = value[selectionStart];
+      if (before && after && before in DELETE_PAIRS && DELETE_PAIRS[before] === after) {
+        e.preventDefault();
+        const newVal = value.slice(0, selectionStart - 1) + value.slice(selectionStart + 1);
+        setCode(newVal);
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = selectionStart - 1;
+        });
+        return;
+      }
+    }
+
+    // ── Auto-close brackets ──
     if (BRACKET_PAIRS[e.key]) {
       e.preventDefault();
       const close = BRACKET_PAIRS[e.key];
@@ -245,16 +414,38 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
       return;
     }
 
-    // Skip over closing bracket if already there
+    // ── Skip over closing bracket ──
     if (CLOSE_BRACKETS.has(e.key) && value[selectionStart] === e.key) {
       e.preventDefault();
       requestAnimationFrame(() => {
         ta.selectionStart = ta.selectionEnd = selectionStart + 1;
       });
+      return;
+    }
+
+    // ── Auto-close quotes ──
+    if (QUOTE_CHARS.has(e.key)) {
+      if (value[selectionStart] === e.key) {
+        e.preventDefault();
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = selectionStart + 1;
+        });
+        return;
+      }
+      const charBefore = value[selectionStart - 1];
+      if (!charBefore || /[\s({[,;=+\-*/<>!&|^~%?:]/.test(charBefore)) {
+        e.preventDefault();
+        const insertion = e.key + e.key;
+        const newVal = value.slice(0, selectionStart) + insertion + value.slice(selectionEnd);
+        setCode(newVal);
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = selectionStart + 1;
+        });
+        return;
+      }
     }
   }
 
-  // Ctrl/Cmd + Enter to run
   useEffect(() => {
     function handleGlobalKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -301,7 +492,6 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {/* "Blank" option */}
             <button
               onClick={handleNew}
               className={cn(
@@ -316,7 +506,7 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
                 Blank — Write your own
               </div>
               <div className="mt-1 text-xs leading-relaxed text-muted/60">
-                Start from scratch with an empty editor.
+                Start with an int main() scaffold.
               </div>
             </button>
 
@@ -397,16 +587,14 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
               {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
               {copied ? "Copied!" : "Copy"}
             </button>
-            {selectedExample !== null && (
-              <button
-                onClick={handleReset}
-                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card-border/30 hover:text-foreground"
-                title="Reset to original example code"
-              >
-                <RotateCcw size={13} />
-                Reset
-              </button>
-            )}
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-card-border/30 hover:text-foreground"
+              title={selectedExample !== null ? "Reset to original example code" : "Reset to blank template"}
+            >
+              <RotateCcw size={13} />
+              Reset
+            </button>
             <button
               onClick={handleClear}
               disabled={!code.trim()}
@@ -423,40 +611,54 @@ export function CodeEditor({ onRun, error, isRunning }: CodeEditorProps) {
             </div>
           </div>
 
-          {/* Code textarea with line numbers */}
+          {/* Code textarea with syntax highlighting overlay */}
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <div className="flex h-full">
               {/* Line numbers gutter */}
               <div
                 ref={lineNumbersRef}
-                className="shrink-0 select-none overflow-hidden bg-code-bg pr-2 pt-6 text-right"
-                style={{ width: "52px" }}
+                className="shrink-0 select-none overflow-hidden border-r border-card-border/30 bg-code-bg pr-2 pt-6 text-right"
+                style={{ width: "54px" }}
                 aria-hidden
               >
                 {Array.from({ length: lineCount }, (_, i) => (
                   <div
                     key={i}
-                    className="px-2 font-mono text-[14px] leading-relaxed text-muted/25"
+                    className="px-2 font-mono text-[14px] leading-relaxed text-muted/30"
                   >
                     {i + 1}
                   </div>
                 ))}
               </div>
 
-              {/* Textarea */}
-              <textarea
-                ref={textareaRef}
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                onScroll={syncScroll}
-                onKeyDown={handleKeyDown}
-                spellCheck={false}
-                className={cn(
-                  "h-full min-w-0 flex-1 resize-none bg-code-bg py-6 pl-2 pr-6 font-mono text-[14px] leading-relaxed text-foreground outline-none",
-                  "placeholder:text-muted/30"
-                )}
-                placeholder="Paste or write your C++ code here..."
-              />
+              {/* Editor area: highlight layer + textarea */}
+              <div className="relative min-w-0 flex-1 bg-code-bg">
+                {/* Syntax-highlighted underlay */}
+                <pre
+                  ref={highlightRef}
+                  className="editor-highlight pointer-events-none absolute inset-0 overflow-hidden whitespace-pre bg-transparent py-6 pl-3 pr-6 font-mono text-[14px] leading-relaxed"
+                  aria-hidden
+                >
+                  <code dangerouslySetInnerHTML={{ __html: highlighted }} />
+                </pre>
+
+                {/* Transparent textarea on top */}
+                <textarea
+                  ref={textareaRef}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  onScroll={syncScroll}
+                  onKeyDown={handleKeyDown}
+                  spellCheck={false}
+                  wrap="off"
+                  className={cn(
+                    "relative z-10 h-full w-full resize-none bg-transparent py-6 pl-3 pr-6 font-mono text-[14px] leading-relaxed text-transparent outline-none",
+                    "placeholder:text-muted/30"
+                  )}
+                  style={{ caretColor: "var(--foreground)" }}
+                  placeholder="Write your C++ code here..."
+                />
+              </div>
             </div>
           </div>
 

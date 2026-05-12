@@ -618,7 +618,11 @@ class Executor {
     this.stack.push({ name: 'main', vars: {}, types: {} });
     this.snapshot(0, 'Begin execution');
     try {
-      this.execBlock(this.program.main, 'main');
+      if (this.program.main.length === 0 && 'main' in this.funcDefs) {
+        this.execBlock(this.funcDefs['main'].body, 'main');
+      } else {
+        this.execBlock(this.program.main, 'main');
+      }
     } catch (e: any) {
       if (e instanceof ReturnSignal) { /* ok */ }
       else {

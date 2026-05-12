@@ -17,6 +17,15 @@
   --danger-dim: rgba(239, 68, 68, 0.12);
   --warning: #f59e0b;
   --warning-dim: rgba(245, 158, 11, 0.12);
+
+  --syn-keyword: #569cd6;
+  --syn-type: #4ec9b0;
+  --syn-string: #ce9178;
+  --syn-number: #b5cea8;
+  --syn-comment: #6a9955;
+  --syn-function: #dcdcaa;
+  --syn-builtin: #dcdcaa;
+  --syn-preprocessor: #c586c0;
 }
 
 /* Light mode */
@@ -36,6 +45,15 @@
   --danger-dim: rgba(220, 38, 38, 0.08);
   --warning: #d97706;
   --warning-dim: rgba(217, 119, 6, 0.08);
+
+  --syn-keyword: #0000ff;
+  --syn-type: #267f99;
+  --syn-string: #a31515;
+  --syn-number: #098658;
+  --syn-comment: #008000;
+  --syn-function: #795e26;
+  --syn-builtin: #795e26;
+  --syn-preprocessor: #af00db;
 }
 
 @theme inline {
@@ -122,4 +140,25 @@ code, pre, .font-mono, textarea {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+/* Syntax highlighting */
+.syn-kw { color: var(--syn-keyword); }
+.syn-type { color: var(--syn-type); }
+.syn-str { color: var(--syn-string); }
+.syn-num { color: var(--syn-number); }
+.syn-cmt { color: var(--syn-comment); font-style: italic; }
+.syn-fn { color: var(--syn-function); }
+.syn-bi { color: var(--syn-builtin); }
+.syn-prep { color: var(--syn-preprocessor); }
+
+.editor-highlight {
+  margin: 0;
+  border: 0;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+
+.editor-highlight code {
+  display: block;
 }
