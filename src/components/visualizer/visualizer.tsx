@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Trace, StackFrame } from "@/types/memory";
 import type { MemoryItem } from "@/types/memory";
 import { CodePanel } from "./code-panel";
@@ -126,6 +126,65 @@ function HeapPanel({ items }: { items: MemoryItem[] }) {
   );
 }
 
+function orderHeapByConnectivity(
+  heapItems: MemoryItem[],
+  stackFrames: StackFrame[]
+): MemoryItem[] {
+  if (heapItems.length <= 1) return heapItems;
+
+  const topIds = new Set(heapItems.map(i => i.id));
+  const itemById = new Map(heapItems.map(i => [i.id, i]));
+
+  function getTargets(item: MemoryItem): string[] {
+    const targets: string[] = [];
+    if (item.pointsTo && topIds.has(item.pointsTo)) {
+      targets.push(item.pointsTo);
+    }
+    if (item.children) {
+      for (const child of item.children) {
+        targets.push(...getTargets(child));
+      }
+    }
+    return targets;
+  }
+
+  const adj = new Map<string, string[]>();
+  for (const item of heapItems) {
+    adj.set(item.id, getTargets(item));
+  }
+
+  const stackEntries: string[] = [];
+  for (const frame of stackFrames) {
+    for (const v of frame.variables) {
+      stackEntries.push(...getTargets(v));
+    }
+  }
+
+  const visited = new Set<string>();
+  const ordered: MemoryItem[] = [];
+  const queue = [...new Set(stackEntries)];
+  let qi = 0;
+
+  while (qi < queue.length) {
+    const id = queue[qi++];
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const item = itemById.get(id);
+    if (item) {
+      ordered.push(item);
+      for (const target of adj.get(id) || []) {
+        if (!visited.has(target)) queue.push(target);
+      }
+    }
+  }
+
+  for (const item of heapItems) {
+    if (!visited.has(item.id)) ordered.push(item);
+  }
+
+  return ordered;
+}
+
 export function Visualizer({ trace, onBack }: VisualizerProps) {
   const [step, setStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -136,6 +195,10 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentStep = trace.steps[step];
+  const orderedHeap = useMemo(
+    () => orderHeapByConnectivity(currentStep.heap, currentStep.stack),
+    [currentStep.heap, currentStep.stack]
+  );
   const pointers = collectPointers(currentStep.stack, currentStep.heap);
 
   // Auto-scroll the memory panel to show changed items or the active frame
@@ -293,7 +356,7 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
               <StackPanel frames={currentStep.stack} />
             </div>
             <div className="min-w-0 flex-1">
-              <HeapPanel items={currentStep.heap} />
+              <HeapPanel items={orderedHeap} />
             </div>
             <ArrowOverlay
               pointers={pointers}

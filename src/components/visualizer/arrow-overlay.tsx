@@ -119,9 +119,9 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
     const result: Arrow[] = [];
     const targetYOffsets: Record<string, number> = {};
     const HEAD = 12;
+    let backwardIdx = 0;
 
     for (const { sourceId, targetId, color, label, fromStack, inactive } of pointers) {
-      // Prefer the pointer icon element for source positioning
       const srcEl = (container.querySelector(`[data-arrow-src="${sourceId}"]`) ||
         container.querySelector(`[data-cell-id="${sourceId}"]`)) as HTMLElement | null;
       const tgtEl = container.querySelector(`[data-cell-id="${targetId}"]`) as HTMLElement | null;
@@ -133,7 +133,7 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
       const sx = sr.right - cRect.left + sL + 3;
       const sy = sr.top + sr.height / 2 - cRect.top + sT;
 
-      const yOff = (targetYOffsets[targetId] || 0) * 6;
+      const yOff = (targetYOffsets[targetId] || 0) * 12;
       targetYOffsets[targetId] = (targetYOffsets[targetId] || 0) + 1;
 
       const tx = tr.left - cRect.left + sL - 2;
@@ -170,9 +170,10 @@ export function ArrowOverlay({ pointers, containerRef, step }: ArrowOverlayProps
         const [lx, ly] = pullBack(tx, ty, headAngle, HEAD * 0.7);
         linePath = `M ${sx} ${sy} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${lx} ${ly}`;
       } else if (dx < -30) {
-        // Backwards arrow — route below the nodes with a compact curve
+        // Backwards arrow — route below with staggered heights to avoid overlap
         const span = absDx;
-        const bump = Math.max(35, span * 0.12 + 20);
+        const bump = Math.max(35, span * 0.12 + 20) + backwardIdx * 20;
+        backwardIdx++;
         const botY = Math.max(sy, ty) + bump;
         const cp1x = sx + Math.min(40, span * 0.15), cp1y = botY;
         const cp2x = tx - Math.min(40, span * 0.15), cp2y = botY;
