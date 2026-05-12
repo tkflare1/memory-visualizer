@@ -243,6 +243,16 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
     setStep(trace.steps.length - 1);
   }, [trace.steps.length]);
 
+  const goStepOver = useCallback(() => {
+    setStep((s) => {
+      const currentDepth = trace.steps[s].stack.length;
+      for (let i = s + 1; i < trace.steps.length; i++) {
+        if (trace.steps[i].stack.length <= currentDepth) return i;
+      }
+      return trace.steps.length - 1;
+    });
+  }, [trace.steps]);
+
   const goToStep = useCallback((s: number) => {
     setStep(Math.max(0, Math.min(s, trace.steps.length - 1)));
   }, [trace.steps.length]);
@@ -292,13 +302,16 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         goPrev();
+      } else if (e.key === "s") {
+        e.preventDefault();
+        goStepOver();
       } else if (e.key === "r") {
         goReset();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [goNext, goPrev, goReset]);
+  }, [goNext, goPrev, goReset, goStepOver]);
 
   return (
     <div className="flex h-screen flex-col">
@@ -396,6 +409,7 @@ export function Visualizer({ trace, onBack }: VisualizerProps) {
         onNext={goNext}
         onReset={goReset}
         onGoToEnd={goToEnd}
+        onStepOver={goStepOver}
         onTogglePlay={togglePlay}
         onSpeedChange={setPlaySpeed}
         onGoToStep={goToStep}

@@ -10,6 +10,7 @@ import {
   Keyboard,
   Minus,
   Plus,
+  ArrowDownToLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ interface ControlsProps {
   onNext: () => void;
   onReset: () => void;
   onGoToEnd: () => void;
+  onStepOver: () => void;
   onTogglePlay: () => void;
   onSpeedChange: (speed: number) => void;
   onGoToStep?: (step: number) => void;
@@ -38,6 +40,7 @@ export function Controls({
   onNext,
   onReset,
   onGoToEnd,
+  onStepOver,
   onTogglePlay,
   onSpeedChange,
   onGoToStep,
@@ -103,6 +106,14 @@ export function Controls({
             <ChevronRight size={20} />
           </button>
           <button
+            onClick={onStepOver}
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/15 hover:text-accent disabled:opacity-25"
+            disabled={step === totalSteps - 1}
+            title="Step over function call (S)"
+          >
+            <ArrowDownToLine size={17} />
+          </button>
+          <button
             onClick={onGoToEnd}
             className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-card-border/60 hover:text-foreground disabled:opacity-25"
             disabled={step === totalSteps - 1}
@@ -147,7 +158,7 @@ export function Controls({
 
           <div className="hidden items-center gap-1.5 text-[11px] text-muted/30 sm:flex">
             <Keyboard size={13} />
-            <span>← → Space R</span>
+            <span>← → Space S R</span>
           </div>
         </div>
       </div>
